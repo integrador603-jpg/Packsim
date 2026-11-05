@@ -113,7 +113,6 @@ def test_validaciones(cliente):
     params = {**TORNILLO, "pieza": {"origen": "archivo"}}
     assert simular(cliente, params).status_code == 422                                           # falta el archivo
     assert simular(cliente, params, ("pieza.pdf", b"x", "application/pdf")).status_code == 415   # formato
-    assert simular(cliente, {**TORNILLO, "criterios": {"modo": "granel"}}).status_code == 422
     r = simular(cliente, {**TORNILLO, "embalaje": {"interior_mm": [300, -1, 150]}})
     assert r.status_code == 422 and "medidas" in r.json()["detalle"]
     r = cliente.post("/v1/simulaciones", data={"parametros": "no es json"})
@@ -214,3 +213,40 @@ def test_interfaz_servida_con_politica_de_contenido():
         assert "script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net" in csp and "unsafe-eval" not in csp
         assert c.get("/app.js").status_code == 200
         assert "onclick=" not in r.text                     # sin scripts incrustados (los bloquearía la política)
+
+
+# ─────────────── etapa 4: física por la API ───────────────
+
+BUJE_CHICO = {"pieza": {"origen": "catalogo", "familia": "buje", "valores": {"diametro": 20, "interior": 10, "largo": 20}},
+              "embalaje": {"interior_mm": [100, 80, 60]}}
+
+
+def test_granel_por_la_api_con_progreso_y_animacion(cliente):
+    import struct
+    params = {**BUJE_CHICO, "criterios": {"modo": "granel", "manipulacion": "autoelevador"}}
+    id_ = simular(cliente, params).json()["id"]
+    vio_progreso = False
+    fin = time.time() + 180
+    while time.time() < fin:
+        d = cliente.get(f"/v1/trabajos/{id_}").json()
+        vio_progreso |= bool(d.get("texto"))
+        if d["estado"] in ("listo", "error"):
+            break
+        time.sleep(0.2)
+    assert d["estado"] == "listo", d
+    R = d["resultado"]["resultado"]
+    assert R["estrategia_id"] == "granel" and 0 < R["maximo_posible"] <= R["fisica"]["maximo_ordenado"]
+    assert R["fisica"]["penetracion_max_mm"] < 1.0
+    assert vio_progreso
+    a = cliente.get(d["animacion"])
+    assert a.status_code == 200 and struct.unpack("<IIf", a.content[:12])[0] > 0
+
+
+def test_validacion_fisica_por_la_api(cliente):
+    params = {**BUJE_CHICO, "criterios": {"manipulacion": "autoelevador", "validar_fisica": True}}
+    d = esperar(cliente, simular(cliente, params).json()["id"], s=180)
+    assert d["estado"] == "listo", d
+    f = d["resultado"]["resultado"]["fisica"]
+    assert f["tipo"] == "validacion" and f["estado"] in ("se_mantiene", "se_reacomoda", "se_desarma")
+    assert f["piezas"] == d["resultado"]["resultado"]["piezas"]
+    assert "animacion" in d

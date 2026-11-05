@@ -203,3 +203,17 @@ h2{font-size:15px;font-weight:600;margin-bottom:3px;text-wrap:balance}
 .dl .btn{flex:1}
 .avisos{margin-top:8px}
 .vbar label,.vbar .seg button{white-space:nowrap}
+
+/* ─── física ─── */
+.reproductor{left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:10px;padding:7px 10px;pointer-events:auto;width:min(520px,calc(100% - 28px))}
+.reproductor input[type=range]{flex:1;accent-color:var(--acc)}
+.reproductor select{border:1px solid var(--line2);border-radius:6px;padding:3px 4px;font-size:12px}
+.reproductor .num{font-size:12px;min-width:52px;text-align:right}
+.fistag{left:14px;top:12px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:12px;line-height:1.6;max-width:340px}
+.fistag b{font-weight:600}
+#busyPct{color:var(--ink3);font-size:12px}
+.fis{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.fis h4{font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.fis .why{font-size:11.5px}
+.chip.ok{background:var(--okbg);color:var(--ok)}
+.chip.mal{background:var(--badbg);color:var(--bad)}

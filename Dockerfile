@@ -9,7 +9,14 @@ RUN curl -fsSL "https://github.com/LibreDWG/libredwg/releases/download/${LIBREDW
     && make -j"$(nproc)" >/dev/null && make install >/dev/null \
     && /opt/libredwg/bin/dwg2dxf --version
 
-# ─── Etapa 2: aplicación ───
+# ─── Etapa 2: motor de física (PyBullet no publica binarios para Python 3.13: se compila acá) ───
+FROM python:3.13-slim AS pybullet
+ARG PYBULLET_VERSION=3.2.7
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels "pybullet==${PYBULLET_VERSION}"
+
+# ─── Etapa 3: aplicación ───
 FROM python:3.13-slim
 # librerías de sistema que necesita OpenCascade (lectura de STEP/IGES)
 RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libx11-6 libexpat1 libxrender1 \
@@ -23,7 +30,8 @@ ENV PATH="/opt/libredwg/bin:${PATH}" \
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=pybullet /wheels /wheels
+RUN pip install --no-cache-dir --find-links /wheels -r requirements.txt && rm -rf /wheels
 COPY packsim ./packsim
 COPY api ./api
 COPY web ./web

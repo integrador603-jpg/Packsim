@@ -24,6 +24,7 @@ class Config:
     # Límites
     tamano_max_mb: int = field(default_factory=lambda: _int("PACKSIM_TAMANO_MAX_MB", 50))
     tiempo_max_s: int = field(default_factory=lambda: _int("PACKSIM_TIEMPO_MAX_S", 120))
+    tiempo_max_fisica_s: int = field(default_factory=lambda: _int("PACKSIM_TIEMPO_MAX_FISICA_S", 240))
     memoria_max_mb: int = field(default_factory=lambda: _int("PACKSIM_MEMORIA_MAX_MB", 2048))
     trabajos_paralelos: int = field(default_factory=lambda: _int("PACKSIM_TRABAJOS_PARALELOS", 2))
     trabajos_max_en_memoria: int = field(default_factory=lambda: _int("PACKSIM_TRABAJOS_MAX", 200))

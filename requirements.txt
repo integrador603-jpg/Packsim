@@ -9,3 +9,4 @@ uvicorn[standard]==0.53.0
 python-multipart==0.0.32
 fast-simplification==0.2.0
 scipy==1.18.1
+pybullet==3.2.7

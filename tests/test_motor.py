@@ -55,5 +55,3 @@ def test_contrato_serializable_y_disposicion_ordenada(tornillo):
 def test_errores_claros(tornillo):
     with pytest.raises(ErrorSimulacion):
         simular(tornillo, Embalaje((0, 200, 150)), Criterios())
-    with pytest.raises(ErrorSimulacion, match="granel"):
-        simular(tornillo, Embalaje((300, 200, 150)), Criterios(modo="granel"))

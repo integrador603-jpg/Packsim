@@ -38,14 +38,21 @@ class Trabajo:
     resultado: Optional[dict] = None
     advertencias: list = field(default_factory=list)
     glb: Optional[bytes] = None
+    animacion: Optional[bytes] = None
+    progreso: float = 0.0
+    texto: str = ""
     error: Optional[str] = None
     duracion_ms: Optional[int] = None
 
     def publico(self, con_resultado: bool = True) -> dict:
         d = {"id": self.id, "estado": self.estado, "duracion_ms": self.duracion_ms}
+        if self.estado == "procesando" and self.texto:
+            d["progreso"], d["texto"] = round(self.progreso, 3), self.texto
         if self.estado == "listo":
             d["advertencias"] = self.advertencias
             d["malla_visor"] = f"/v1/trabajos/{self.id}/malla"
+            if self.animacion:
+                d["animacion"] = f"/v1/trabajos/{self.id}/animacion"
             if con_resultado:
                 d["resultado"] = self.resultado
         if self.estado == "error":
@@ -92,7 +99,10 @@ class Almacen:
 def _hijo(conn, params, datos, nombre, memoria_mb):
     try:
         from api.tarea import correr
-        conn.send(correr(params, datos, nombre))
+
+        def avisar(fraccion, texto):
+            conn.send({"progreso": float(fraccion), "texto": str(texto)})
+        conn.send(correr(params, datos, nombre, avisar))
     except MemoryError:
         conn.send({"ok": False, "error": "La pieza necesita más memoria de la permitida. Exportala con menos detalle.", "tipo": "limite"})
     except BaseException:
@@ -132,7 +142,7 @@ def _motivo_salida(codigo: Optional[int]) -> tuple[str, str]:
 
 
 def ejecutar_aislado(params: dict, datos: Optional[bytes], nombre: Optional[str], tiempo_max_s: int, memoria_mb: int,
-                     destino=_hijo, intervalo_s: float = 0.2) -> dict:
+                     destino=_hijo, intervalo_s: float = 0.2, al_avanzar=None) -> dict:
     """Corre `destino` en otro proceso y lo vigila: lo corta si supera el tiempo o la memoria. Bloqueante."""
     rx, tx = _ctx.Pipe(duplex=False)
     p = _ctx.Process(target=destino, args=(tx, params, datos, nombre, memoria_mb), daemon=True)
@@ -144,7 +154,12 @@ def ejecutar_aislado(params: dict, datos: Optional[bytes], nombre: Optional[str]
         while True:
             if rx.poll(intervalo_s):
                 try:
-                    return rx.recv()
+                    msg = rx.recv()
+                    if isinstance(msg, dict) and "progreso" in msg and "ok" not in msg:
+                        if al_avanzar:
+                            al_avanzar(msg["progreso"], msg["texto"])
+                        continue
+                    return msg
                 except EOFError:
                     p.join(5)
                     msg, tipo = _motivo_salida(p.exitcode)
@@ -170,19 +185,27 @@ def ejecutar_aislado(params: dict, datos: Optional[bytes], nombre: Optional[str]
 
 
 class Ejecutor:
-    def __init__(self, almacen: Almacen, paralelos: int, tiempo_max_s: int, memoria_mb: int):
+    def __init__(self, almacen: Almacen, paralelos: int, tiempo_max_s: int, memoria_mb: int, tiempo_max_fisica_s: int = 240):
         self.almacen, self.tiempo_max_s, self.memoria_mb = almacen, tiempo_max_s, memoria_mb
+        self.tiempo_max_fisica_s = tiempo_max_fisica_s
         self._sem = asyncio.Semaphore(paralelos)
 
     async def correr(self, t: Trabajo, params: dict, datos: Optional[bytes], nombre: Optional[str], huella: str):
         async with self._sem:
             t.estado = "procesando"
             t0 = time.perf_counter()
-            r = await asyncio.to_thread(ejecutar_aislado, params, datos, nombre, self.tiempo_max_s, self.memoria_mb)
+            c = params.get("criterios") or {}
+            fisica = c.get("modo") == "granel" or bool(c.get("validar_fisica"))
+
+            def al_avanzar(f, txt):
+                t.progreso, t.texto = f, txt
+            r = await asyncio.to_thread(ejecutar_aislado, params, datos, nombre,
+                                        self.tiempo_max_fisica_s if fisica else self.tiempo_max_s, self.memoria_mb,
+                                        al_avanzar=al_avanzar)
             del datos                                      # los bytes del archivo dejan de existir acá
             t.duracion_ms = round((time.perf_counter() - t0) * 1000)
             if r.get("ok"):
-                t.resultado, t.advertencias, t.glb, t.estado = r["resultado"], r["advertencias"], r["glb"], "listo"
+                t.resultado, t.advertencias, t.glb, t.animacion, t.estado = r["resultado"], r["advertencias"], r["glb"], r.get("animacion"), "listo"
             else:
                 t.error, t.estado = r["error"], "error"
             t.terminado = time.time()

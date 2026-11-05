@@ -97,9 +97,10 @@
       <p class="sub">Definen qué cuenta como "el mejor" acomodo y cuál es el 100% de saturación.</p>
       <div class="lbl">Modo de carga</div>
       <div class="seg">
-        <button class="on" disabled>Ordenado</button>
-        <button disabled title="Llega con la simulación física">A granel <span class="soon">pronto</span></button>
+        <button id="md-ordenado" class="on" data-modo="ordenado">Ordenado</button>
+        <button id="md-granel" data-modo="granel">A granel</button>
       </div>
+      <p class="sub" style="margin:8px 0 0" id="modoHint"></p>
       <div class="lbl">Manipulación</div>
       <div class="seg">
         <button id="mh-man" class="on" data-manip="manual">Manual</button>
@@ -143,7 +144,7 @@
     <div class="seg" aria-label="Vista">
       <button id="v-part" class="on" data-vista="part">Pieza</button>
       <button id="v-pack" data-vista="pack">Acomodo</button>
-      <button id="v-phys" disabled title="Llega con la simulación física">Física <span class="soon">pronto</span></button>
+      <button id="v-phys" data-vista="phys" disabled title="Disponible después de simular a granel o validar">Física</button>
     </div>
     <div style="flex:1"></div>
     <label class="rng" for="trans">Transparencia <input type="range" id="trans" min="0" max="90" value="55"></label>
@@ -158,7 +159,14 @@
       <input type="range" id="cut" min="0" max="100" value="100" aria-label="Corte por altura">
     </div>
     <div class="ov empty3d" id="empty3d" hidden>Elegí una pieza para empezar</div>
-    <div class="busy" id="busy" hidden><div><span class="spin"></span><span id="busyTxt">Calculando…</span></div></div>
+    <div class="ov reproductor" id="repro" hidden>
+      <button class="btn sm" id="btnPlay" aria-label="Reproducir o pausar">❚❚</button>
+      <input type="range" id="reproT" min="0" max="1000" value="0" aria-label="Momento de la simulación">
+      <span class="num" id="reproLbl">0,0 s</span>
+      <select id="reproVel" aria-label="Velocidad"><option value="0.5">×0,5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select>
+    </div>
+    <div class="ov fistag" id="fisTag" hidden></div>
+    <div class="busy" id="busy" hidden><div><span class="spin"></span><span id="busyTxt">Calculando…</span><span class="num" id="busyPct"></span></div></div>
   </div>
 </section>
 
@@ -176,6 +184,7 @@
   <div class="card">
     <h3>Saturación <span id="limChip"></span></h3>
     <div id="resBody"><div class="why">Completá los pasos y presioná Calcular.</div></div>
+    <div id="fisBox"></div>
     <div class="dl" id="dlBox" hidden>
       <button class="btn sm" id="btnPng">Descargar imagen</button>
       <button class="btn sm" id="btnJson">Descargar resultado</button>

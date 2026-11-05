@@ -57,7 +57,8 @@ def crear_app(cfg: Config | None = None) -> FastAPI:
 
     def ejecutor() -> Ejecutor:
         if app.state.ejecutor is None:
-            app.state.ejecutor = Ejecutor(app.state.almacen, cfg.trabajos_paralelos, cfg.tiempo_max_s, cfg.memoria_max_mb)
+            app.state.ejecutor = Ejecutor(app.state.almacen, cfg.trabajos_paralelos, cfg.tiempo_max_s, cfg.memoria_max_mb,
+                                          cfg.tiempo_max_fisica_s)
         return app.state.ejecutor
 
     # ───────────── cabeceras y errores ─────────────
@@ -154,8 +155,6 @@ def crear_app(cfg: Config | None = None) -> FastAPI:
         except (json.JSONDecodeError, ValidationError) as e:
             errores = [_msg(x) for x in e.errors()] if isinstance(e, ValidationError) else ["El campo 'parametros' no es JSON válido."]
             raise HTTPException(422, "Parámetros inválidos: " + "; ".join(errores))
-        if getattr(p, "criterios", None) and p.criterios.modo == "granel":
-            raise HTTPException(422, "El modo a granel todavía no está disponible: llega con la simulación física.")
 
         datos, nombre, huella = None, None, "catalogo"
         if p.pieza.origen == "archivo":
@@ -201,6 +200,15 @@ def crear_app(cfg: Config | None = None) -> FastAPI:
         if not t or t.estado != "listo" or not t.glb:
             raise HTTPException(404, "La malla no está disponible.")
         return Response(t.glb, media_type="model/gltf-binary")
+
+    @app.get("/v1/trabajos/{id_}/animacion", dependencies=[Depends(exigir_acceso)])
+    def animacion(id_: str):
+        """Binario: uint32 n_piezas, uint32 n_cuadros, float32 fps, uint32[n] cuadro de aparición,
+        float32[n_cuadros][n_piezas][7] = x, y, z (mm, marco del embalaje), qx, qy, qz, qw."""
+        t = app.state.almacen.obtener(id_)
+        if not t or t.estado != "listo" or not t.animacion:
+            raise HTTPException(404, "La animación no está disponible.")
+        return Response(t.animacion, media_type="application/octet-stream")
 
     @app.delete("/v1/trabajos/{id_}", dependencies=[Depends(exigir_acceso)])
     @app.delete("/v1/simulaciones/{id_}", dependencies=[Depends(exigir_acceso)], include_in_schema=False)

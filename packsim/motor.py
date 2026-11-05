@@ -74,7 +74,7 @@ def _explicacion(mejor, grilla, alts, prioridad, pesos, pieza) -> str:
         partes.append("El embalaje vacío ya pesa igual o más que el límite manual: hace falta autoelevador o un embalaje más liviano.")
     elif pesos["limitado_por"] != "espacio":
         partes.append(f"El peso manda: {mejor.piezas} piezas pesarían {mejor.piezas * pieza.masa_kg:.1f} kg; "
-                      f"por la {pesos['limitado_por']} entran {pesos['limite_por_peso']}.")
+                      f"por {'el' if pesos['limitado_por'].startswith('peso') else 'la'} {pesos['limitado_por']} entran {pesos['limite_por_peso']}.")
     return " ".join(partes)
 
 
@@ -83,6 +83,22 @@ def _capas(alt) -> list[dict]:
         return []
     cnt = Counter(round(float(c.centro_mm[2]), 2) for c in alt.colocaciones)
     return [{"nivel": i + 1, "altura_centro_mm": z, "piezas": cnt[z]} for i, z in enumerate(sorted(cnt))]
+
+
+def info_pieza(pieza: Pieza) -> dict:
+    """Ficha de la pieza para mostrar (sin geometría)."""
+    return {
+        "nombre": f"{pieza.nombre} {pieza.descripcion}" if pieza.origen == "catalogo" else pieza.nombre,
+        "origen": pieza.origen,
+        "norma_o_archivo": pieza.norma,
+        "envolvente_mm": [round(float(x), 3) for x in pieza.envolvente_mm],
+        "centro_envolvente_mm": [round(float(x), 3) for x in pieza.centro_mm],
+        "volumen_cm3": round(pieza.volumen_mm3 / 1000, 4),
+        "peso_kg": round(pieza.masa_kg, 5),
+        "origen_peso": pieza.origen_masa,
+        "material": pieza.material,
+        "solido_cerrado": bool(pieza.malla.is_watertight),
+    }
 
 
 def simular(pieza: Pieza, emb: Embalaje, crit: Criterios, incluir_disposicion: bool = True,
@@ -106,18 +122,7 @@ def simular(pieza: Pieza, emb: Embalaje, crit: Criterios, incluir_disposicion: b
         "version": VERSION_CONTRATO,
         "motor": f"packsim {__version__}",
         "tiempo_ms": round((time.perf_counter() - t0) * 1000),
-        "pieza": {
-            "nombre": f"{pieza.nombre} {pieza.descripcion}" if pieza.origen == "catalogo" else pieza.nombre,
-            "origen": pieza.origen,
-            "norma_o_archivo": pieza.norma,
-            "envolvente_mm": [round(float(x), 3) for x in pieza.envolvente_mm],
-            "centro_envolvente_mm": [round(float(x), 3) for x in pieza.centro_mm],
-            "volumen_cm3": round(pieza.volumen_mm3 / 1000, 4),
-            "peso_kg": round(pieza.masa_kg, 5),
-            "origen_peso": pieza.origen_masa,
-            "material": pieza.material,
-            "solido_cerrado": bool(pieza.malla.is_watertight),
-        },
+        "pieza": info_pieza(pieza),
         "embalaje": {"nombre": emb.nombre, "tipo": emb.tipo, "interior_mm": list(emb.interior_mm),
                      "carga_max_kg": emb.carga_max_kg or None, "tara_kg": emb.tara_kg, "relleno_kg": emb.relleno_kg},
         "criterios": {"modo": crit.modo, "holgura_mm": crit.holgura_mm, "manipulacion": crit.manipulacion,

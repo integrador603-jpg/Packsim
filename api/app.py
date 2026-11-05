@@ -5,9 +5,11 @@ API de Packsim (sin estado).
   GET    /v1/catalogo               piezas, materiales y embalajes de referencia
   GET    /v1/embalajes/tara         tara estimada de un embalaje a medida
   POST   /v1/simulaciones           crea una simulación (archivo 3D o pieza del catálogo)
-  GET    /v1/simulaciones/{id}      estado y resultado
-  GET    /v1/simulaciones/{id}/malla  pieza liviana en GLB para el visor
-  DELETE /v1/simulaciones/{id}      borra el resultado antes de que venza
+  POST   /v1/piezas                 analiza solo la pieza (ficha y malla para la vista previa)
+  GET    /v1/trabajos/{id}          estado y resultado de una simulación o análisis
+  GET    /v1/trabajos/{id}/malla    pieza liviana en GLB para el visor
+  DELETE /v1/trabajos/{id}          borra el resultado antes de que venza
+  (/v1/simulaciones/{id} sigue disponible como alias)
 
 Nada se guarda en disco. Los resultados viven en memoria y vencen solos.
 Correr local:  uvicorn api.app:app --reload
@@ -32,7 +34,7 @@ from packsim.embalajes import CATALOGO, TIPOS, estimar_tara
 from packsim.lectura import FORMATOS
 
 from .config import Config
-from .esquemas import ParametrosIn, SesionIn
+from .esquemas import ParametrosIn, PiezaSolaIn, SesionIn
 from .seguridad import COOKIE, LimiteFrecuencia, clave_correcta, crear_token, exigir_acceso, ip_cliente, token_valido
 from .trabajos import Almacen, Ejecutor
 
@@ -66,6 +68,11 @@ def crear_app(cfg: Config | None = None) -> FastAPI:
         r.headers["Referrer-Policy"] = "no-referrer"
         if request.url.path.startswith("/v1"):
             r.headers["Cache-Control"] = "no-store"
+        else:
+            r.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
+                "img-src 'self' data: blob:; connect-src 'self' blob: data:; worker-src 'self' blob:; frame-ancestors 'none'")
         return r
 
     @app.exception_handler(HTTPException)
@@ -119,16 +126,15 @@ def crear_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, str(e))
 
     # ───────────── simulaciones ─────────────
-    @app.post("/v1/simulaciones", status_code=202, dependencies=[Depends(exigir_acceso)])
-    async def crear_simulacion(request: Request, parametros: str = Form(...), archivo: UploadFile | None = File(None)):
+    async def _encolar(request, modelo, parametros, archivo):
         if not app.state.limite.permitir(ip_cliente(request)):
             raise HTTPException(429, "Llegaste al máximo de simulaciones por hora. Probá más tarde.")
         try:
-            p = ParametrosIn.model_validate(json.loads(parametros))
+            p = modelo.model_validate(json.loads(parametros))
         except (json.JSONDecodeError, ValidationError) as e:
             errores = [_msg(x) for x in e.errors()] if isinstance(e, ValidationError) else ["El campo 'parametros' no es JSON válido."]
             raise HTTPException(422, "Parámetros inválidos: " + "; ".join(errores))
-        if p.criterios.modo == "granel":
+        if getattr(p, "criterios", None) and p.criterios.modo == "granel":
             raise HTTPException(422, "El modo a granel todavía no está disponible: llega con la simulación física.")
 
         datos, nombre, huella = None, None, "catalogo"
@@ -150,23 +156,34 @@ def crear_app(cfg: Config | None = None) -> FastAPI:
         tarea = asyncio.create_task(ejecutor().correr(t, p.model_dump(), datos, nombre, huella))
         app.state.tareas.add(tarea)
         tarea.add_done_callback(app.state.tareas.discard)
-        return {"id": t.id, "estado": t.estado, "consultar": f"/v1/simulaciones/{t.id}"}
+        return {"id": t.id, "estado": t.estado, "consultar": f"/v1/trabajos/{t.id}"}
 
-    @app.get("/v1/simulaciones/{id_}", dependencies=[Depends(exigir_acceso)])
+    @app.post("/v1/simulaciones", status_code=202, dependencies=[Depends(exigir_acceso)])
+    async def crear_simulacion(request: Request, parametros: str = Form(...), archivo: UploadFile | None = File(None)):
+        return await _encolar(request, ParametrosIn, parametros, archivo)
+
+    @app.post("/v1/piezas", status_code=202, dependencies=[Depends(exigir_acceso)])
+    async def analizar_pieza(request: Request, parametros: str = Form(...), archivo: UploadFile | None = File(None)):
+        return await _encolar(request, PiezaSolaIn, parametros, archivo)
+
+    @app.get("/v1/trabajos/{id_}", dependencies=[Depends(exigir_acceso)])
+    @app.get("/v1/simulaciones/{id_}", dependencies=[Depends(exigir_acceso)], include_in_schema=False)
     def ver_simulacion(id_: str):
         t = app.state.almacen.obtener(id_)
         if not t:
             raise HTTPException(404, "La simulación no existe o ya venció (los resultados duran una hora).")
         return t.publico()
 
-    @app.get("/v1/simulaciones/{id_}/malla", dependencies=[Depends(exigir_acceso)])
+    @app.get("/v1/trabajos/{id_}/malla", dependencies=[Depends(exigir_acceso)])
+    @app.get("/v1/simulaciones/{id_}/malla", dependencies=[Depends(exigir_acceso)], include_in_schema=False)
     def malla(id_: str):
         t = app.state.almacen.obtener(id_)
         if not t or t.estado != "listo" or not t.glb:
             raise HTTPException(404, "La malla no está disponible.")
         return Response(t.glb, media_type="model/gltf-binary")
 
-    @app.delete("/v1/simulaciones/{id_}", dependencies=[Depends(exigir_acceso)])
+    @app.delete("/v1/trabajos/{id_}", dependencies=[Depends(exigir_acceso)])
+    @app.delete("/v1/simulaciones/{id_}", dependencies=[Depends(exigir_acceso)], include_in_schema=False)
     def borrar(id_: str):
         if not app.state.almacen.borrar(id_):
             raise HTTPException(404, "La simulación no existe o ya venció.")

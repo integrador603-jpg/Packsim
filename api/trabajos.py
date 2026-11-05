@@ -3,6 +3,9 @@ Trabajos de simulación: ejecución aislada y almacén en memoria con vencimient
 
 - Cada simulación corre en un proceso aparte con tiempo y memoria máximos. Si un conversor CAD
   se cuelga o rompe, se mata ese proceso y la API sigue funcionando.
+- La memoria se controla midiendo la que el proceso USA (RSS), no la que reserva: las librerías 3D
+  reservan mucho espacio de direcciones por cada núcleo del servidor y un límite sobre la reserva
+  (RLIMIT_AS) las hacía abortar en servidores con muchos núcleos.
 - Los resultados viven solo en memoria y vencen (1 h por defecto). Nada se escribe en disco.
 - `Almacen` es una interfaz: para varios servidores se reemplaza por una versión con Redis
   sin tocar el resto de la API.
@@ -12,7 +15,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import multiprocessing as mp
-import resource
+import os
+import signal
 import threading
 import time
 import uuid
@@ -87,11 +91,6 @@ class Almacen:
 
 def _hijo(conn, params, datos, nombre, memoria_mb):
     try:
-        lim = memoria_mb * 1024 * 1024
-        resource.setrlimit(resource.RLIMIT_AS, (lim, lim))
-    except (ValueError, OSError):
-        pass
-    try:
         from api.tarea import correr
         conn.send(correr(params, datos, nombre))
     except MemoryError:
@@ -103,20 +102,66 @@ def _hijo(conn, params, datos, nombre, memoria_mb):
         conn.close()
 
 
+def memoria_usada_mb(pid: int) -> float:
+    """Memoria residente (RSS) del proceso y sus hijos directos (p. ej. el conversor de DWG)."""
+    total = 0.0
+    pids = [pid]
+    try:
+        with open(f"/proc/{pid}/task/{pid}/children") as fh:
+            pids += [int(x) for x in fh.read().split()]
+    except OSError:
+        pass
+    for q in pids:
+        try:
+            with open(f"/proc/{q}/status") as fh:
+                for linea in fh:
+                    if linea.startswith("VmRSS:"):
+                        total += int(linea.split()[1]) / 1024
+                        break
+        except OSError:
+            pass
+    return total
+
+
+def _motivo_salida(codigo: Optional[int]) -> tuple[str, str]:
+    if codigo == -signal.SIGKILL:
+        return ("El servidor se quedó sin memoria con esta pieza. Exportala con menos detalle o probá de nuevo.", "memoria")
+    if codigo in (-signal.SIGSEGV, -signal.SIGABRT, -signal.SIGBUS):
+        return ("El lector 3D falló con este archivo. Probá exportarlo de nuevo, idealmente como STEP.", "lector")
+    return ("El proceso de simulación terminó de forma inesperada. Probá de nuevo; si se repite, el archivo puede estar dañado.", "interno")
+
+
 def ejecutar_aislado(params: dict, datos: Optional[bytes], nombre: Optional[str], tiempo_max_s: int, memoria_mb: int,
-                     destino=_hijo) -> dict:
-    """Corre `destino` en otro proceso; lo mata si supera el tiempo. Bloqueante."""
+                     destino=_hijo, intervalo_s: float = 0.2) -> dict:
+    """Corre `destino` en otro proceso y lo vigila: lo corta si supera el tiempo o la memoria. Bloqueante."""
     rx, tx = _ctx.Pipe(duplex=False)
     p = _ctx.Process(target=destino, args=(tx, params, datos, nombre, memoria_mb), daemon=True)
     p.start()
     tx.close()
+    fin = time.monotonic() + tiempo_max_s
+    pico = 0.0
     try:
-        if rx.poll(tiempo_max_s):
-            try:
-                return rx.recv()
-            except EOFError:
-                return {"ok": False, "error": "El proceso de simulación terminó de forma inesperada (posible archivo dañado).", "tipo": "interno"}
-        return {"ok": False, "error": f"La simulación superó el tiempo máximo de {tiempo_max_s} s y se canceló.", "tipo": "limite"}
+        while True:
+            if rx.poll(intervalo_s):
+                try:
+                    return rx.recv()
+                except EOFError:
+                    p.join(5)
+                    msg, tipo = _motivo_salida(p.exitcode)
+                    log.warning("proceso terminado sin respuesta: codigo=%s motivo=%s pico_mb=%.0f", p.exitcode, tipo, pico)
+                    return {"ok": False, "error": msg, "tipo": tipo}
+            uso = memoria_usada_mb(p.pid)
+            pico = max(pico, uso)
+            if uso > memoria_mb:
+                log.warning("proceso cortado por memoria: uso_mb=%.0f limite_mb=%s", uso, memoria_mb)
+                return {"ok": False, "error": f"La pieza necesitó más de {memoria_mb} MB de memoria y se canceló. Exportala con menos detalle.", "tipo": "limite"}
+            if time.monotonic() > fin:
+                return {"ok": False, "error": f"La simulación superó el tiempo máximo de {tiempo_max_s} s y se canceló.", "tipo": "limite"}
+            if not p.is_alive() and not rx.poll(0):
+                p.join(5)
+                msg, tipo = _motivo_salida(p.exitcode)
+                log.warning("proceso terminado sin respuesta: codigo=%s motivo=%s pico_mb=%.0f", p.exitcode, tipo, pico)
+                return {"ok": False, "error": msg, "tipo": tipo}
     finally:
         rx.close()
         if p.is_alive():

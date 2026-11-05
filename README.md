@@ -1,7 +1,7 @@
 # Packsim: motor de embalaje
 
 Calcula cómo acomodar piezas en un embalaje, cuántas entran como máximo, la **saturación por capacidad** y el **peso bruto**.
-Es la etapa 1 del proyecto: el motor en Python, sin interfaz ni servidor. Las etapas 2 a 5 (API, interfaz web, física y despliegue) lo usan sin modificarlo.
+El repositorio tiene el motor en Python (etapa 1) y la API web sin estado (etapa 2). Las etapas siguientes (interfaz, física y despliegue) los usan sin modificarlos.
 
 ## Qué hace
 
@@ -59,6 +59,59 @@ r["resultado"]["saturacion"], r["resultado"]["peso_bruto_kg"]
 Marco del embalaje: origen en la esquina interior inferior; x largo, y ancho, z alto.
 `p_embalaje = rotacion · (p_pieza − centro_envolvente_mm) + centro_mm`.
 
+## API (etapa 2)
+
+Servicio sin estado: recibe la pieza, calcula y devuelve el resultado. **Ningún archivo 3D se guarda.**
+
+```bash
+PACKSIM_CLAVE="una-contraseña-larga" PACKSIM_SECRETO="$(openssl rand -hex 32)" uvicorn api.app:app --port 8000
+```
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| POST | `/v1/sesion` | Inicia sesión con `{"clave": "..."}` (cookie firmada, `HttpOnly`, `SameSite=Strict`) |
+| GET | `/v1/catalogo` | Piezas, materiales, embalajes de referencia y formatos aceptados |
+| GET | `/v1/embalajes/tara?largo=&ancho=&alto=&tipo=` | Tara estimada de un embalaje a medida |
+| POST | `/v1/simulaciones` | Multipart: `parametros` (JSON) y `archivo` opcional → `202` con el `id` |
+| GET | `/v1/simulaciones/{id}` | Estado (`en_cola`, `procesando`, `listo`, `error`) y resultado |
+| GET | `/v1/simulaciones/{id}/malla` | La pieza en GLB liviano para dibujarla en el visor |
+| DELETE | `/v1/simulaciones/{id}` | Borra el resultado antes de que venza |
+
+Ejemplo de `parametros`:
+
+```json
+{"pieza": {"origen": "catalogo", "familia": "tornillo_hexagonal", "valores": {"metrica": "M10", "largo": 50}},
+ "embalaje": {"interior_mm": [300, 200, 150], "tipo": "carton", "carga_max_kg": 15, "tara_kg": 0.3},
+ "criterios": {"manipulacion": "manual", "peso_bruto_manipulable_kg": 15, "prioridad": "cantidad"}}
+```
+
+Para un archivo: `"pieza": {"origen": "archivo", "unidades": "mm", "peso_kg": 3.7}` y el archivo en el campo `archivo`.
+Para integraciones se usa `Authorization: Bearer <clave>` con las claves de `PACKSIM_API_KEYS`.
+
+**Cómo protege los datos**
+
+- El archivo se lee en memoria; los conversores usan una carpeta temporal que se borra siempre.
+- Cada simulación corre en un **proceso aparte** con tiempo y memoria máximos: un archivo dañado no tumba el servidor.
+- Los resultados viven en memoria y **vencen a la hora**. En los logs solo queda la huella del archivo, nunca el nombre ni el contenido.
+- Límite de tamaño de archivo y de simulaciones por hora por IP; demora ante contraseñas incorrectas.
+
+**Variables de entorno**
+
+| Variable | Defecto | Uso |
+|---|---|---|
+| `PACKSIM_CLAVE` | — | Contraseña de la interfaz. Sin ella (y sin API keys) la API queda abierta: solo para uso local |
+| `PACKSIM_SECRETO` | aleatorio | Firma de las sesiones. Fijalo en producción para que las sesiones sobrevivan a un reinicio |
+| `PACKSIM_API_KEYS` | — | Claves para integraciones, separadas por coma |
+| `PACKSIM_TAMANO_MAX_MB` | 50 | Tamaño máximo de archivo |
+| `PACKSIM_TIEMPO_MAX_S` | 120 | Tiempo máximo por simulación |
+| `PACKSIM_MEMORIA_MAX_MB` | 2048 | Memoria máxima por simulación |
+| `PACKSIM_TRABAJOS_PARALELOS` | 2 | Simulaciones simultáneas |
+| `PACKSIM_VENCIMIENTO_S` | 3600 | Cuánto dura un resultado en memoria |
+| `PACKSIM_LIMITE_POR_HORA` | 120 | Simulaciones por hora por IP |
+| `PACKSIM_COOKIES_SEGURAS` | 1 | Poné 0 solo para probar en `http://localhost` |
+
+**Escala:** el estado de los trabajos vive en la memoria de un solo servidor. Para varias réplicas se reemplaza `Almacen` (en `api/trabajos.py`) por una versión con Redis; el resto no cambia.
+
 ## Requisitos
 
 - Python 3.10+
@@ -85,7 +138,6 @@ Verifican pesos contra tablas, conteos exactos, **cero colisiones** entre piezas
 
 ## Próximas etapas
 
-2. API sin estado (FastAPI): subís el archivo, recibís el resultado, nada se guarda.
 3. Interfaz web (la de la maqueta) conectada a la API, con descarga de imagen y JSON.
 4. Física en el servidor con PyBullet (volcado a granel y validación con vibración).
 5. Despliegue en Railway con Dockerfile y tests automáticos.

@@ -53,5 +53,9 @@ class ParametrosIn(BaseModel):
     criterios: CriteriosIn = Field(default_factory=CriteriosIn)
 
 
+class PiezaSolaIn(BaseModel):
+    pieza: PiezaIn
+
+
 class SesionIn(BaseModel):
     clave: str = Field(max_length=200)

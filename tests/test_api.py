@@ -168,3 +168,25 @@ def test_tope_de_trabajos_en_memoria():
     a.nuevo(); a.nuevo()
     with pytest.raises(OverflowError):
         a.nuevo()
+
+
+# ─────────────── etapa 3: análisis de pieza e interfaz ───────────────
+
+def test_analisis_de_pieza_sin_embalaje(cliente):
+    r = cliente.post("/v1/piezas", data={"parametros": json.dumps({"pieza": TORNILLO["pieza"]})})
+    assert r.status_code == 202
+    d = esperar(cliente, r.json()["id"])
+    assert d["estado"] == "listo", d
+    assert set(d["resultado"]) == {"pieza"}
+    assert d["resultado"]["pieza"]["nombre"] == "Tornillo hexagonal M10 × 50"
+    assert cliente.get(d["malla_visor"]).content[:4] == b"glTF"
+
+
+def test_interfaz_servida_con_politica_de_contenido():
+    with TestClient(crear_app(cfg())) as c:
+        r = c.get("/")
+        assert r.status_code == 200 and "Packsim" in r.text
+        csp = r.headers["content-security-policy"]
+        assert "script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net" in csp and "unsafe-eval" not in csp
+        assert c.get("/app.js").status_code == 200
+        assert "onclick=" not in r.text                     # sin scripts incrustados (los bloquearía la política)

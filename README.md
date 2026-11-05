@@ -1,7 +1,7 @@
 # Packsim: motor de embalaje
 
 Calcula cómo acomodar piezas en un embalaje, cuántas entran como máximo, la **saturación por capacidad** y el **peso bruto**.
-El repositorio tiene el motor en Python (etapa 1) y la API web sin estado (etapa 2). Las etapas siguientes (interfaz, física y despliegue) los usan sin modificarlos.
+El repositorio tiene el motor en Python (etapa 1), la API web sin estado (etapa 2) y la interfaz web (etapa 3). Las etapas siguientes (física y despliegue) los usan sin modificarlos.
 
 ## Qué hace
 
@@ -72,10 +72,11 @@ PACKSIM_CLAVE="una-contraseña-larga" PACKSIM_SECRETO="$(openssl rand -hex 32)" 
 | POST | `/v1/sesion` | Inicia sesión con `{"clave": "..."}` (cookie firmada, `HttpOnly`, `SameSite=Strict`) |
 | GET | `/v1/catalogo` | Piezas, materiales, embalajes de referencia y formatos aceptados |
 | GET | `/v1/embalajes/tara?largo=&ancho=&alto=&tipo=` | Tara estimada de un embalaje a medida |
+| POST | `/v1/piezas` | Analiza solo la pieza (ficha y malla para la vista previa) → `202` con el `id` |
 | POST | `/v1/simulaciones` | Multipart: `parametros` (JSON) y `archivo` opcional → `202` con el `id` |
-| GET | `/v1/simulaciones/{id}` | Estado (`en_cola`, `procesando`, `listo`, `error`) y resultado |
-| GET | `/v1/simulaciones/{id}/malla` | La pieza en GLB liviano para dibujarla en el visor |
-| DELETE | `/v1/simulaciones/{id}` | Borra el resultado antes de que venza |
+| GET | `/v1/trabajos/{id}` | Estado (`en_cola`, `procesando`, `listo`, `error`) y resultado |
+| GET | `/v1/trabajos/{id}/malla` | La pieza en GLB liviano para dibujarla en el visor |
+| DELETE | `/v1/trabajos/{id}` | Borra el resultado antes de que venza |
 
 Ejemplo de `parametros`:
 
@@ -112,6 +113,18 @@ Para integraciones se usa `Authorization: Bearer <clave>` con las claves de `PAC
 
 **Escala:** el estado de los trabajos vive en la memoria de un solo servidor. Para varias réplicas se reemplaza `Almacen` (en `api/trabajos.py`) por una versión con Redis; el resto no cambia.
 
+## Interfaz web (etapa 3)
+
+La API sirve la interfaz en `/` (carpeta `web/`). Flujo en 4 pasos: pieza (catálogo o archivo 3D), embalaje, criterios y resultado.
+
+- Toda la geometría y los cálculos vienen de la API; el navegador solo dibuja.
+- El archivo 3D se envía para analizarlo y otra vez al calcular, y nunca queda guardado en el servidor.
+- Resultado: saturación, factor limitante, peso bruto con su desglose, alternativas, explicación, armado por capas y vista 3D con caja de cartón, madera o plástico, transparencia y corte por altura.
+- Descargas: **imagen** del acomodo con los datos clave al pie y **resultado** en JSON (contrato v1).
+- Sin scripts incrustados: la API envía una política de contenido (CSP) que solo permite los scripts propios y los de cdnjs/jsdelivr.
+
+Probar local: `PACKSIM_CLAVE=prueba PACKSIM_COOKIES_SEGURAS=0 uvicorn api.app:app` y abrir http://localhost:8000.
+
 ## Requisitos
 
 - Python 3.10+
@@ -138,6 +151,5 @@ Verifican pesos contra tablas, conteos exactos, **cero colisiones** entre piezas
 
 ## Próximas etapas
 
-3. Interfaz web (la de la maqueta) conectada a la API, con descarga de imagen y JSON.
 4. Física en el servidor con PyBullet (volcado a granel y validación con vibración).
 5. Despliegue en Railway con Dockerfile y tests automáticos.

@@ -41,7 +41,7 @@ class Trabajo:
         d = {"id": self.id, "estado": self.estado, "duracion_ms": self.duracion_ms}
         if self.estado == "listo":
             d["advertencias"] = self.advertencias
-            d["malla_visor"] = f"/v1/simulaciones/{self.id}/malla"
+            d["malla_visor"] = f"/v1/trabajos/{self.id}/malla"
             if con_resultado:
                 d["resultado"] = self.resultado
         if self.estado == "error":

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Packsim</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="estilos.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+
+<div class="login" id="login" hidden>
+  <form id="loginForm">
+    <h1><span class="brand"><i><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2 4.5L7 2l5 2.5v5L7 12 2 9.5z"/><path d="M2 4.5L7 7l5-2.5M7 7v5"/></svg></i>Packsim</span></h1>
+    <p>Simulador de embalaje. Ingresá la contraseña para continuar.</p>
+    <label for="clave" class="lbl" style="margin:0">Contraseña</label>
+    <input type="password" id="clave" autocomplete="current-password" required>
+    <div class="err" id="loginErr"></div>
+    <button class="btn pri" type="submit">Entrar</button>
+  </form>
+</div>
+
+<header class="top">
+  <div class="brand"><i><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2 4.5L7 2l5 2.5v5L7 12 2 9.5z"/><path d="M2 4.5L7 7l5-2.5M7 7v5"/></svg></i>Packsim</div>
+  <div class="proj">Los archivos no se guardan · los resultados duran una hora</div>
+  <nav class="steps" aria-label="Pasos">
+    <button class="step on" id="st0" data-paso="0"><b>1</b>Pieza</button><span class="sep"></span>
+    <button class="step" id="st1" data-paso="1"><b>2</b>Embalaje</button><span class="sep"></span>
+    <button class="step" id="st2" data-paso="2"><b>3</b>Criterios</button><span class="sep"></span>
+    <button class="step" id="st3" data-paso="3"><b>4</b>Resultado</button>
+  </nav>
+  <button class="btn" id="btnSalir">Salir</button>
+</header>
+
+<div class="main">
+<aside class="left">
+  <div class="scroll">
+    <section id="p0">
+      <h2>¿Qué pieza vas a embalar?</h2>
+      <p class="sub">Elegila del catálogo de minutería normalizada o subí el archivo 3D. El archivo se usa para calcular y no se guarda.</p>
+      <div class="seg">
+        <button id="src-cat" class="on" data-fuente="cat">Catálogo</button>
+        <button id="src-file" data-fuente="file">Archivo 3D</button>
+      </div>
+      <div id="srcCat">
+        <input class="search" id="q" type="search" placeholder="Buscar: tornillo, tuerca, 6204, DIN 125…" aria-label="Buscar en el catálogo">
+        <div class="fams" id="fams"></div>
+        <div class="lbl" style="margin-top:18px">Medidas <span class="norma" id="famNorma" style="float:right"></span></div>
+        <div id="famFields"></div>
+      </div>
+      <div id="srcFile" hidden>
+        <label class="drop" id="drop" for="fileIn">
+          <input type="file" id="fileIn" hidden>
+          <b>Arrastrá el archivo de la pieza</b><span>o hacé clic para buscarlo</span>
+          <small id="fmts">STEP · IGES · STL · OBJ · GLB · DXF · DWG</small>
+        </label>
+        <div class="msg info" id="impMsg">STEP es el formato más fiel. Los DWG tienen que tener la pieza en 3D.</div>
+        <div class="lbl">Datos de la pieza</div>
+        <div class="row"><label for="impName">Nombre / código</label><input type="text" id="impName" placeholder="ej. 87654321" maxlength="120" style="text-align:left;font-family:var(--f-ui)"></div>
+        <div class="row"><label for="impUnit">Unidades del archivo</label><select id="impUnit"><option value="mm">milímetros</option><option value="cm">centímetros</option><option value="m">metros</option><option value="in">pulgadas</option></select></div>
+        <div class="row"><label for="impKg">Peso unitario real</label><input type="number" id="impKg" min="0" step="0.001" placeholder="calcular"><span class="u">kg</span></div>
+        <div class="avisos" id="avisos"></div>
+      </div>
+      <div class="lbl">Material</div>
+      <div class="row"><label for="mat">Material</label><select id="mat" style="width:190px"></select></div>
+      <div class="lbl">Color / terminación</div>
+      <div class="sws" id="sws"></div>
+    </section>
+
+    <section id="p1" hidden>
+      <h2>¿En qué embalaje?</h2>
+      <p class="sub">Medidas interiores útiles. Elegí uno del catálogo o cargá uno a medida.</p>
+      <div class="boxes" id="boxList"></div>
+      <div class="lbl">Tipo de embalaje</div>
+      <div class="seg">
+        <button id="bt-carton" class="on" data-tipo="carton">Cartón</button>
+        <button id="bt-madera" data-tipo="madera">Madera</button>
+        <button id="bt-plastico" data-tipo="plastico">Plástico</button>
+      </div>
+      <div class="lbl">Medidas interiores</div>
+      <div class="row"><label for="bL">Largo</label><input type="number" id="bL" min="1"><span class="u">mm</span></div>
+      <div class="row"><label for="bW">Ancho</label><input type="number" id="bW" min="1"><span class="u">mm</span></div>
+      <div class="row"><label for="bH">Alto</label><input type="number" id="bH" min="1"><span class="u">mm</span></div>
+      <div class="row"><label for="bKg">Carga máxima (contenido)</label><input type="number" id="bKg" min="0" step="1"><span class="u">kg</span></div>
+      <div class="lbl">Peso del embalaje</div>
+      <div class="row"><label for="bTare">Embalaje vacío (tara)</label><input type="number" id="bTare" min="0" step="0.05"><span class="u">kg</span></div>
+      <p class="sub" id="tareHint" style="margin:-3px 0 10px;font-size:11px"></p>
+      <div class="row"><label for="bFill">Relleno y separadores</label><input type="number" id="bFill" value="0" min="0" step="0.05"><span class="u">kg</span></div>
+    </section>
+
+    <section id="p2" hidden>
+      <h2>¿Con qué criterios?</h2>
+      <p class="sub">Definen qué cuenta como "el mejor" acomodo y cuál es el 100% de saturación.</p>
+      <div class="lbl">Modo de carga</div>
+      <div class="seg">
+        <button class="on" disabled>Ordenado</button>
+        <button disabled title="Llega con la simulación física">A granel <span class="soon">pronto</span></button>
+      </div>
+      <div class="lbl">Manipulación</div>
+      <div class="seg">
+        <button id="mh-man" class="on" data-manip="manual">Manual</button>
+        <button id="mh-fork" data-manip="autoelevador">Autoelevador</button>
+      </div>
+      <p class="sub" style="margin:8px 0 8px" id="mhHint"></p>
+      <div class="row" id="manRow"><label for="manKg">Peso bruto máximo manipulable</label><input type="number" id="manKg" value="15" min="0" step="1"><span class="u">kg</span></div>
+      <div class="lbl">Restricciones</div>
+      <div class="row"><label for="gap">Holgura entre piezas</label><input type="number" id="gap" value="1" min="0" step="0.5"><span class="u">mm</span></div>
+      <label class="chk"><input type="checkbox" id="upright"> <span>Mantener la pieza en la posición del catálogo o el archivo (no acostar ni invertir)</span></label>
+      <div class="lbl">Prioridad ante empate</div>
+      <div class="seg">
+        <button id="pr-cantidad" class="on" data-prio="cantidad">Cantidad</button>
+        <button id="pr-estabilidad" data-prio="estabilidad">Estabilidad</button>
+        <button id="pr-picking" data-prio="picking">Picking</button>
+      </div>
+      <p class="sub" style="margin:8px 0 0" id="prioHint"></p>
+      <div class="lbl">Auditoría (opcional)</div>
+      <div class="row"><label for="audit">Piezas que trae hoy la caja</label><input type="number" id="audit" min="0" step="1" placeholder="—"><span class="u">u.</span></div>
+    </section>
+
+    <section id="p3" hidden>
+      <h2>Resultado</h2>
+      <p class="sub" id="resSub">Presioná Calcular.</p>
+      <div class="lbl">Alternativas evaluadas</div>
+      <div class="alts" id="alts"></div>
+      <div class="lbl">Por qué este acomodo</div>
+      <div class="why" id="why"></div>
+      <div class="lbl" id="layLbl">Armado por capas</div>
+      <table class="layers" id="layers"></table>
+    </section>
+  </div>
+  <div class="foot">
+    <button class="btn" id="backBtn">Atrás</button>
+    <button class="btn pri" id="nextBtn" style="flex:1">Continuar</button>
+  </div>
+</aside>
+
+<section class="center">
+  <div class="vbar">
+    <div class="seg" aria-label="Vista">
+      <button id="v-part" class="on" data-vista="part">Pieza</button>
+      <button id="v-pack" data-vista="pack">Acomodo</button>
+      <button id="v-phys" disabled title="Llega con la simulación física">Física <span class="soon">pronto</span></button>
+    </div>
+    <div style="flex:1"></div>
+    <label class="rng" for="trans">Transparencia <input type="range" id="trans" min="0" max="90" value="55"></label>
+    <label class="chk" style="margin:0;align-items:center"><input type="checkbox" id="colOri"> Color por orientación</label>
+    <button class="btn sm" id="btnFit">Encuadrar</button>
+  </div>
+  <div class="vp" id="vp">
+    <canvas id="c3d" aria-label="Vista 3D"></canvas>
+    <div class="ov dimtag" id="dimTag"></div>
+    <div class="ov cut" id="cutBox" hidden>
+      <div class="h"><span>Ver hasta la capa</span><span class="num" id="cutLbl">todas</span></div>
+      <input type="range" id="cut" min="0" max="100" value="100" aria-label="Corte por altura">
+    </div>
+    <div class="ov empty3d" id="empty3d" hidden>Elegí una pieza para empezar</div>
+    <div class="busy" id="busy" hidden><div><span class="spin"></span><span id="busyTxt">Calculando…</span></div></div>
+  </div>
+</section>
+
+<aside class="right">
+  <div class="card">
+    <h3>Pieza</h3>
+    <div class="pname" id="pName">—</div>
+    <div style="font-size:12px;color:var(--ink2)" id="pDesc"></div>
+    <dl class="kv" id="pKv"></dl>
+  </div>
+  <div class="card">
+    <h3>Embalaje <span id="eName"></span></h3>
+    <dl class="kv" id="eKv"></dl>
+  </div>
+  <div class="card">
+    <h3>Saturación <span id="limChip"></span></h3>
+    <div id="resBody"><div class="why">Completá los pasos y presioná Calcular.</div></div>
+    <div class="dl" id="dlBox" hidden>
+      <button class="btn sm" id="btnPng">Descargar imagen</button>
+      <button class="btn sm" id="btnJson">Descargar resultado</button>
+    </div>
+  </div>
+</aside>
+</div>
+<div class="toast" id="toast" hidden></div>
+</body>
+</html>

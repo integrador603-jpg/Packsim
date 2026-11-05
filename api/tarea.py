@@ -14,7 +14,7 @@ import trimesh
 from packsim.catalogo import ErrorCatalogo, construir
 from packsim.lectura import ErrorLectura, advertencias, leer_pieza
 from packsim.modelos import Criterios, Embalaje
-from packsim.motor import ErrorSimulacion, simular
+from packsim.motor import ErrorSimulacion, info_pieza, simular
 
 CARAS_MAX_VISOR = 40_000
 
@@ -37,6 +37,9 @@ def correr(params: dict, datos: bytes | None, nombre_archivo: str | None) -> dic
         else:
             pieza = leer_pieza(datos, nombre_archivo, pz.get("unidades", "mm"), pz.get("material", "acero"),
                                pz.get("peso_kg"), pz.get("nombre"))
+        avisos = advertencias(pieza) if pz["origen"] != "catalogo" else []
+        if not params.get("embalaje"):                  # solo análisis de la pieza (paso 1 de la interfaz)
+            return {"ok": True, "resultado": {"pieza": info_pieza(pieza)}, "advertencias": avisos, "glb": malla_visor(pieza.malla)}
         e, c = params["embalaje"], params["criterios"]
         emb = Embalaje(tuple(e["interior_mm"]), e.get("tipo", "carton"), e.get("nombre", "A medida"),
                        e.get("carga_max_kg") or 0.0, e.get("tara_kg") or 0.0, e.get("relleno_kg") or 0.0)
@@ -46,7 +49,7 @@ def correr(params: dict, datos: bytes | None, nombre_archivo: str | None) -> dic
                          mantener_posicion=bool(c.get("mantener_posicion")), prioridad=c.get("prioridad", "cantidad"),
                          piezas_actuales=c.get("piezas_actuales") or 0)
         resultado = simular(pieza, emb, crit)
-        return {"ok": True, "resultado": resultado, "advertencias": advertencias(pieza) if pz["origen"] != "catalogo" else [],
+        return {"ok": True, "resultado": resultado, "advertencias": avisos,
                 "glb": malla_visor(pieza.malla)}
     except (ErrorLectura, ErrorCatalogo, ErrorSimulacion) as e:
         return {"ok": False, "error": str(e), "tipo": "datos"}

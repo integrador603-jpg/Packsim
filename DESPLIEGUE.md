@@ -7,7 +7,7 @@ Railway construye la imagen con el `Dockerfile` del repositorio y vuelve a despl
 1. **Entrá a [railway.com](https://railway.com)** con tu cuenta de GitHub.
 2. **New Project → Deploy from GitHub repo → Packsim.**
    Si el repositorio no aparece, tocá *Configure GitHub App* y dale acceso a `Packsim`.
-3. **Esperá la primera construcción.** Tarda entre 5 y 10 minutos porque compila el conversor de DWG. Las siguientes son más rápidas.
+3. **Esperá la primera construcción.** Tarda entre 10 y 15 minutos porque compila el conversor de DWG y el motor de física. Las siguientes son más rápidas.
 4. **Cargá las variables** (servicio → *Variables*):
 
    | Variable | Valor |
@@ -35,7 +35,7 @@ Los tests corren solos en GitHub (pestaña *Actions*) en cada pull request. No h
 
 ## Costo y recursos
 
-- En reposo usa unos 300 MB de memoria. Mientras calcula, cada simulación puede usar hasta `PACKSIM_MEMORIA_MAX_MB`.
+- En reposo usa unos 300 MB de memoria. La física usa un núcleo de CPU durante 20 s a 2 min por simulación; es lo que más pesa en el consumo. Mientras calcula, cada simulación puede usar hasta `PACKSIM_MEMORIA_MAX_MB`.
 - Con el plan Hobby de Railway (unos 5 USD por mes con uso incluido, verificá el precio vigente en su página) alcanza para uso personal o de un equipo chico.
 - Dejá **una sola réplica**: los trabajos viven en la memoria del servidor. Para escalar a varias réplicas hay que pasar el almacén de trabajos a Redis (ver `api/trabajos.py`).
 
@@ -49,3 +49,4 @@ Los tests corren solos en GitHub (pestaña *Actions*) en cada pull request. No h
 | "Llegaste al máximo de simulaciones por hora" | Subí `PACKSIM_LIMITE_POR_HORA` |
 | "El servidor se quedó sin memoria" o "El lector 3D falló" | Abrí `/v1/diagnostico` y mirá *Deploy Logs*: el log dice el código de salida y la memoria máxima usada |
 | Las simulaciones de piezas grandes se cancelan | Subí `PACKSIM_TIEMPO_MAX_S` o `PACKSIM_MEMORIA_MAX_MB`, o exportá la pieza con menos detalle |
+| Las simulaciones a granel o las validaciones se cancelan por tiempo | Subí `PACKSIM_TIEMPO_MAX_FISICA_S` (240 por defecto). Usan un núcleo entero mientras corren |

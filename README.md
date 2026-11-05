@@ -1,7 +1,7 @@
 # Packsim: motor de embalaje
 
 Calcula cómo acomodar piezas en un embalaje, cuántas entran como máximo, la **saturación por capacidad** y el **peso bruto**.
-El repositorio tiene el motor en Python (etapa 1), la API web sin estado (etapa 2) y la interfaz web (etapa 3). Las etapas siguientes (física y despliegue) los usan sin modificarlos.
+El repositorio tiene el motor en Python (etapa 1), la API web sin estado (etapa 2), la interfaz web (etapa 3) y la simulación física (etapa 4).
 
 ## Qué hace
 
@@ -106,6 +106,7 @@ Para integraciones se usa `Authorization: Bearer <clave>` con las claves de `PAC
 | `PACKSIM_API_KEYS` | — | Claves para integraciones, separadas por coma |
 | `PACKSIM_TAMANO_MAX_MB` | 50 | Tamaño máximo de archivo |
 | `PACKSIM_TIEMPO_MAX_S` | 120 | Tiempo máximo por simulación |
+| `PACKSIM_TIEMPO_MAX_FISICA_S` | 240 | Tiempo máximo de las simulaciones a granel y de las validaciones con vibración |
 | `PACKSIM_MEMORIA_MAX_MB` | 2048 | Memoria máxima por simulación |
 | `PACKSIM_TRABAJOS_PARALELOS` | 2 | Simulaciones simultáneas |
 | `PACKSIM_VENCIMIENTO_S` | 3600 | Cuánto dura un resultado en memoria |
@@ -144,7 +145,8 @@ Verifican pesos contra tablas, conteos exactos, **cero colisiones** entre piezas
 
 - La rosca no se modela: el peso de tornillos y tuercas queda unos pocos por ciento arriba del real.
 - Las piezas leídas de archivos se acomodan por su caja envolvente. Encastres entre piezas de archivo (pares, anidado) llegan en una etapa posterior.
-- El modo **a granel** necesita la simulación física (etapa 4) y hoy devuelve un error explicativo.
+- La física usa la pieza simplificada en partes convexas: los huecos muy finos (una rosca, una ranura de 1 mm) no se aprovechan.
+- En embalajes grandes el modo a granel simula una muestra y extrapola (±5%). La animación muestra la muestra.
 
 ## Prototipo
 
@@ -154,6 +156,12 @@ Verifican pesos contra tablas, conteos exactos, **cero colisiones** entre piezas
 
 Ver [DESPLIEGUE.md](DESPLIEGUE.md): Railway con el `Dockerfile` del repositorio, tests automáticos en GitHub Actions.
 
-## Próximas etapas
+## Física (etapa 4)
 
-4. Física en el servidor con PyBullet (volcado a granel y validación con vibración).
+`packsim/fisica.py`, con PyBullet. La pieza se descompone en partes convexas (V-HACD) y el mundo se escala para que la física sea estable con piezas de cualquier tamaño.
+
+- **A granel** (`criterios.modo = "granel"`): vuelca piezas con orientación al azar por tandas, vibra el embalaje para asentarlas y cuenta las que quedan adentro. Ese conteo es el 100% de saturación. Calibrado con esferas: fracción de llenado 0,63 (empaquetamiento aleatorio compacto). En embalajes grandes simula una caja de muestra y extrapola corrigiendo el efecto de las paredes; nunca informa más piezas que el mejor acomodo ordenado.
+- **Validación con vibración** (`criterios.validar_fisica = true`): toma el acomodo ordenado, cierra el embalaje y simula 4 s de transporte acelerado (3–25 Hz, ≈0,5 g RMS). Informa piezas que se salen, que se vuelcan (> 30°) y que se corren (> 15% de su largo), con el veredicto *se mantiene*, *se reacomoda* o *se desarma*.
+- Mientras corre, `GET /v1/trabajos/{id}` informa `progreso` (0–1) y `texto`. Al terminar, `GET /v1/trabajos/{id}/animacion` devuelve la animación en binario: `<IIf` (piezas, cuadros, fps), `uint32[piezas]` cuadro en que aparece cada una y `float32[cuadros][piezas][7]` con posición (mm, ejes del embalaje) y cuaternión.
+- La interfaz tiene el selector *Ordenado / A granel* en Criterios, el botón **Validar con vibración** en el resultado y la vista **Física** con reproductor.
+- Tarda entre 20 segundos y un par de minutos según la pieza y el embalaje.

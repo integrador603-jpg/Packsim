@@ -16,16 +16,17 @@ async function api(ruta, opts = {}) {
   if (!r.ok) throw new Error((json && datos.detalle) || `Error ${r.status}`);
   return datos;
 }
-async function trabajo(ruta, params, archivo) {
+async function trabajo(ruta, params, archivo, alAvanzar) {
   const fd = new FormData();
   fd.append('parametros', JSON.stringify(params));
   if (archivo) fd.append('archivo', archivo);
   const { id } = await api(ruta, { method: 'POST', body: fd });
-  const fin = Date.now() + 5 * 60 * 1000;
+  const fin = Date.now() + 8 * 60 * 1000;
   let espera = 250;
   while (Date.now() < fin) {
     await dormir(espera); espera = Math.min(1000, espera * 1.4);
     const t = await api('/v1/trabajos/' + id);
+    if (t.texto && alAvanzar) alAvanzar(t.progreso, t.texto);
     if (t.estado === 'listo') return t;
     if (t.estado === 'error') throw new Error(t.error);
   }
@@ -54,11 +55,11 @@ const BOX_ICON = {
 const S = {
   cat: null, paso: 0, fuente: 'cat', famId: 'tornillo_hexagonal', famVals: {}, terminacion: 'zinc', colorLibre: '#3d6fb0',
   archivo: null, pieza: null, geo: null, avisos: [], boxIdx: 1, tipo: 'carton', taraOrigen: 'cat', manip: 'manual', prio: 'cantidad',
-  res: null, vista: 'part', hechos: [false, false, false, false], pedido: 0, desactualizado: true,
+  res: null, vista: 'part', hechos: [false, false, false, false], pedido: 0, desactualizado: true, modo: 'ordenado', anim: null,
 };
 
 // ═══════════════ THREE ═══════════════
-let renderer, scene, camera, grid, gPart, gPack;
+let renderer, scene, camera, grid, gPart, gPack, gFis;
 const orbit = { th: 0.8, ph: 0.5, r: 300, t: null };
 function iniciar3D() {
   const c3d = $('c3d');
@@ -70,7 +71,7 @@ function iniciar3D() {
   const dl = new THREE.DirectionalLight(0xffffff, 0.85); dl.position.set(4, 7, 5); scene.add(dl);
   const dl2 = new THREE.DirectionalLight(0xc9d8e8, 0.3); dl2.position.set(-5, 3, -4); scene.add(dl2);
   grid = new THREE.GridHelper(2000, 40, 0xbac2ca, 0xd3d9df); scene.add(grid);
-  gPart = new THREE.Group(); gPack = new THREE.Group(); scene.add(gPart, gPack);
+  gPart = new THREE.Group(); gPack = new THREE.Group(); gFis = new THREE.Group(); scene.add(gPart, gPack, gFis);
   orbit.t = new THREE.Vector3();
   let drag = 0, lx = 0, ly = 0;
   c3d.addEventListener('contextmenu', e => e.preventDefault());
@@ -88,7 +89,7 @@ function iniciar3D() {
     requestAnimationFrame(bucle);
     const t = orbit.t;
     camera.position.set(t.x + orbit.r * Math.sin(orbit.th) * Math.cos(orbit.ph), t.y + orbit.r * Math.sin(orbit.ph), t.z + orbit.r * Math.cos(orbit.th) * Math.cos(orbit.ph));
-    camera.lookAt(t); renderer.render(scene, camera);
+    camera.lookAt(t); avanzarAnimacion(); renderer.render(scene, camera);
   })();
 }
 function ajustar() { const w = $('vp').clientWidth, h = $('vp').clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
@@ -193,10 +194,10 @@ function cajaVisual(L, W, H) {
 }
 function aplicarTransparencia() {
   const tr = (+$('trans').value || 0) / 100;
-  gPack.traverse(o => {
+  [gPack, gFis].forEach(G => G && G.traverse(o => {
     if (o.userData.pared && o.material) { o.material.opacity = 1 - tr; o.material.depthWrite = tr < 0.02; o.material.needsUpdate = true; }
     if (o.userData.borde && o.material) o.material.opacity = Math.max(0.25, 0.55 - tr * 0.2);
-  });
+  }));
 }
 
 const PAL = [0x1f5f9e, 0xd08a2c, 0x2f8f6a, 0x8e5bb5, 0xc4483e, 0x4aa3c9, 0x7b8a2e, 0xb05c8a];
@@ -235,13 +236,16 @@ function aplicarCorte() {
 function encuadrarVista() {
   const b = medidasCaja();
   if (S.vista === 'part' && S.pieza) { const e = S.pieza.envolvente_mm; encuadrar(new THREE.Vector3(e[0], e[2], e[1]).multiplyScalar(1.7), new THREE.Vector3(0, e[2] / 2, 0)); }
+  else if (S.vista === 'phys' && S.anim) { const d = S.anim.caja; encuadrar(new THREE.Vector3(d[0], d[2] * 1.4, d[1]), new THREE.Vector3(0, d[2] * 0.5, 0)); }
   else if (S.vista === 'pack' && b) { const sol = S.tipo === 'carton' ? b.W * 0.45 : 0; encuadrar(new THREE.Vector3(b.L + sol * 0.4, b.H + sol, b.W + sol * 0.8), new THREE.Vector3(0, (b.H + sol) / 2, 0)); }
 }
 function ponerVista(v) {
-  S.vista = v; ['part', 'pack'].forEach(k => $('v-' + k).className = k === v ? 'on' : '');
-  gPart.visible = v === 'part'; gPack.visible = v === 'pack'; grid.visible = v === 'part';
-  $('dimTag').hidden = v !== 'part';
+  if (v === 'phys' && !S.anim) v = 'pack';
+  S.vista = v; ['part', 'pack', 'phys'].forEach(k => $('v-' + k).className = k === v ? 'on' : '');
+  gPart.visible = v === 'part'; gPack.visible = v === 'pack'; gFis.visible = v === 'phys'; grid.visible = v === 'part';
+  $('dimTag').hidden = v !== 'part'; $('repro').hidden = v !== 'phys'; $('fisTag').hidden = v !== 'phys';
   if (v === 'pack') dibujarAcomodo();
+  if (v === 'phys') { if (S.anim) { S.anim.reproduciendo = true; $('btnPlay').textContent = '❚❚'; } }
   $('cutBox').hidden = !(v === 'pack' && S.res && S.res.resultado.resultado.piezas);
   encuadrarVista();
 }
@@ -404,7 +408,7 @@ function ponerPrio(p) {
 
 // ═══════════════ PASO 4: RESULTADO ═══════════════
 function marcarDesactualizado() { S.desactualizado = true; if (S.paso === 3) $('resSub').textContent = 'Cambiaste datos: presioná Recalcular.'; }
-async function calcular() {
+async function calcular(opciones = {}) {
   const b = medidasCaja();
   if (!S.pieza) { aviso('Primero elegí o cargá una pieza.', true); irPaso(0); return; }
   if (!b) { aviso('Completá las medidas interiores del embalaje.', true); irPaso(1); return; }
@@ -412,21 +416,107 @@ async function calcular() {
     pieza: paramsPieza(),
     embalaje: { interior_mm: [b.L, b.W, b.H], tipo: S.tipo, nombre: S.boxIdx >= 0 ? S.cat.embalajes[S.boxIdx].nombre : 'A medida',
       carga_max_kg: b.kg, tara_kg: Math.max(0, +$('bTare').value || 0), relleno_kg: Math.max(0, +$('bFill').value || 0) },
-    criterios: { modo: 'ordenado', holgura_mm: Math.max(0, +$('gap').value || 0), manipulacion: S.manip,
+    criterios: { modo: S.modo, validar_fisica: !!opciones.validar, holgura_mm: Math.max(0, +$('gap').value || 0), manipulacion: S.manip,
       peso_bruto_manipulable_kg: Math.max(0, +$('manKg').value || 0), mantener_posicion: $('upright').checked,
       prioridad: S.prio, piezas_actuales: Math.max(0, Math.floor(+$('audit').value || 0)) },
   };
-  ocupado('Calculando el mejor acomodo…');
+  const fisica = S.modo === 'granel' || opciones.validar;
+  ocupado(S.modo === 'granel' ? 'Simulando el volcado…' : opciones.validar ? 'Simulando el transporte…' : 'Calculando el mejor acomodo…');
   try {
-    S.res = await trabajo('/v1/simulaciones', params, S.fuente === 'file' ? S.archivo : null);
+    S.res = await trabajo('/v1/simulaciones', params, S.fuente === 'file' ? S.archivo : null, (p, txt) => ocupado(txt, p));
     S.desactualizado = false;
-    renderResultado(); ponerVista('pack');
+    S.anim = null; limpiar(gFis); $('v-phys').disabled = true;
+    if (S.res.animacion) await cargarAnimacion(S.res);
+    renderResultado(); ponerVista(fisica && S.anim ? 'phys' : 'pack');
   } catch (e) { if (!(e instanceof ErrorSesion)) aviso(e.message, true); }
   finally { ocupado(null); }
 }
+function htmlFisica(R, K) {
+  const F = R.fisica;
+  if (K.modo !== 'granel' && !F) return R.piezas ? `<div class="fis"><h4>Validación física</h4><div class="why">Simula el transporte en camión con el embalaje cerrado y mide cuánto se mueve cada pieza.</div><button class="btn sm w" style="margin-top:8px" data-accion="validar">Validar con vibración</button></div>` : '';
+  if (!F) return '';
+  if (F.error) return `<div class="fis"><h4>Validación física</h4><div class="why">${esc(F.error)}</div></div>`;
+  const ver = S.anim ? '<button class="btn sm w" style="margin-top:8px" data-accion="verfisica">Ver la simulación</button>' : '';
+  if (F.tipo === 'granel') {
+    const m = F.muestra;
+    return `<div class="fis"><h4>Simulación a granel <span class="chip geo">${fmt(F.tiempo_simulado_s, 0)} s simulados</span></h4><div class="why">
+      ${m ? `Muestra de ${m.interior_mm.map(x => fmt(x)).join(' × ')} mm con ${fmt(m.piezas)} piezas, extrapolada al embalaje (±5%).` : `Se simularon todas las piezas (${fmt(R.maximo_posible)}).`}
+      ${F.ciclos} ciclo${F.ciclos === 1 ? '' : 's'} de llenado y vibrado. Acomodadas en orden entrarían ${fmt(F.maximo_ordenado)}.
+      ${F.acotado_al_ordenado ? '<br>El conteo a granel superaba al ordenado y se acotó.' : ''}</div>${ver}</div>`;
+  }
+  const EST = { se_mantiene: ['ok', 'Se mantiene'], se_reacomoda: ['peso', 'Se reacomoda'], se_desarma: ['mal', 'Se desarma'] }[F.estado];
+  return `<div class="fis"><h4>Validación física <span class="chip ${EST[0]}">${EST[1]}</span></h4>
+    <dl class="kv" style="margin-top:4px">
+      <dt>Piezas que se salen</dt><dd>${fmt(F.piezas_fuera)}</dd>
+      <dt>Piezas volcadas (&gt; 30°)</dt><dd>${fmt(F.piezas_volcadas)}</dd>
+      <dt>Piezas corridas</dt><dd>${fmt(F.piezas_corridas)} de ${fmt(F.piezas)}</dd>
+      <dt>Desplazamiento medio / máx.</dt><dd>${fmt(F.desplazamiento_medio_mm, 1)} / ${fmt(F.desplazamiento_max_mm, 1)} mm</dd>
+    </dl><div class="why" style="margin-top:6px">${esc(F.perfil)}. ${esc(F.criterio)}.</div>${ver}</div>`;
+}
+function ponerModo(m) {
+  S.modo = m; $('md-ordenado').className = m === 'ordenado' ? 'on' : ''; $('md-granel').className = m === 'granel' ? 'on' : '';
+  $('modoHint').textContent = m === 'ordenado' ? 'Las piezas se acomodan una por una siguiendo un patrón.' : 'Las piezas se vuelcan sin acomodar y se vibra el embalaje. El 100% es lo que entra así. Tarda entre segundos y un par de minutos.';
+  marcarDesactualizado();
+}
+
+// ═══════════════ ANIMACIÓN FÍSICA ═══════════════
+async function cargarAnimacion(T) {
+  const buf = await api(T.animacion);
+  const dv = new DataView(buf), n = dv.getUint32(0, true), f = dv.getUint32(4, true), fps = dv.getFloat32(8, true);
+  const nacido = new Uint32Array(buf.slice(12, 12 + 4 * n)), datos = new Float32Array(buf.slice(12 + 4 * n));
+  const R = T.resultado.resultado, F = R.fisica, E = T.resultado.embalaje;
+  const caja = F && F.interior_simulado_mm ? F.interior_simulado_mm : E.interior_mm;
+  S.anim = { n, f, fps, nacido, datos, caja, t: 0, dur: (f - 1) / fps, reproduciendo: true, ultimo: performance.now(), vel: 1 };
+  limpiar(gFis);
+  const tipoPrev = S.tipo; S.tipo = E.tipo; const bv = cajaVisual(caja[0], caja[1], caja[2]); S.tipo = tipoPrev;
+  if (F && F.tipo === 'validacion') {   // embalaje cerrado: tapa translúcida
+    const tapa = new THREE.Mesh(new THREE.BoxGeometry(caja[0], 2, caja[1]), new THREE.MeshLambertMaterial({ color: 0x9c8462, transparent: true, opacity: 0.12, depthWrite: false }));
+    tapa.position.y = caja[2] + 1; tapa.userData.own = true; bv.add(tapa);
+    bv.children.forEach(o => { if (o.parent === bv && o.rotation && o.type === 'Group') o.visible = false; });
+  }
+  gFis.add(bv); aplicarTransparencia();
+  const c = T.resultado.pieza.centro_envolvente_mm, e = T.resultado.pieza.envolvente_mm;
+  const caras = S.geo.index ? S.geo.index.count / 3 : S.geo.attributes.position.count / 3;
+  const geo = caras * n > 6e6 ? new THREE.BoxGeometry(e[0], e[1], e[2]).translate(c[0], c[1], c[2]) : S.geo;
+  const im = new THREE.InstancedMesh(geo, metal(colorPieza()), n);
+  if (geo !== S.geo) im.userData.own = true;
+  im.frustumCulled = false; gFis.add(im); S.anim.im = im;
+  S.anim.T0 = new THREE.Matrix4().makeTranslation(-caja[0] / 2, 0, caja[1] / 2).multiply(CP);
+  S.anim.Tc = new THREE.Matrix4().makeTranslation(-c[0], -c[1], -c[2]);
+  $('v-phys').disabled = false;
+  $('fisTag').innerHTML = F && F.tipo === 'validacion'
+    ? `<b>Transporte simulado</b> con el embalaje cerrado<br>${fmt(F.piezas)} piezas · ${fmt(F.duracion_simulada_s, 0)} s de vibración`
+    : `<b>Volcado a granel</b>${F && F.muestra ? ' · muestra del embalaje' : ''}<br>${fmt(caja[0])} × ${fmt(caja[1])} × ${fmt(caja[2])} mm`;
+  pintarCuadro();
+}
+const _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _m = new THREE.Matrix4(), _M = new THREE.Matrix4(), _cero = new THREE.Matrix4().makeScale(0, 0, 0);
+function pintarCuadro() {
+  const A = S.anim; if (!A) return;
+  const i = Math.max(0, Math.min(A.f - 1, Math.floor(A.t * A.fps))), base = i * A.n * 7;
+  for (let k = 0; k < A.n; k++) {
+    const o = base + k * 7;
+    if (A.nacido[k] > i || Number.isNaN(A.datos[o])) { A.im.setMatrixAt(k, _cero); continue; }
+    _p.set(A.datos[o], A.datos[o + 1], A.datos[o + 2]); _q.set(A.datos[o + 3], A.datos[o + 4], A.datos[o + 5], A.datos[o + 6]);
+    _m.compose(_p, _q, _s); _M.copy(A.T0).multiply(_m).multiply(A.Tc); A.im.setMatrixAt(k, _M);
+  }
+  A.im.instanceMatrix.needsUpdate = true;
+  $('reproT').value = Math.round(A.t / Math.max(A.dur, 1e-6) * 1000);
+  $('reproLbl').textContent = fmt(A.t, 1) + ' s';
+}
+function avanzarAnimacion() {
+  const A = S.anim, ahora = performance.now();
+  if (!A) return;
+  const dt = (ahora - A.ultimo) / 1000; A.ultimo = ahora;
+  if (!A.reproduciendo || S.vista !== 'phys') return;
+  A.t += dt * (+$('reproVel').value || 1);
+  if (A.t >= A.dur) { A.t = A.dur; A.reproduciendo = false; $('btnPlay').textContent = '▶'; }
+  pintarCuadro();
+}
+
 function limpiarResultado() {
   $('resBody').innerHTML = '<div class="why">Completá los pasos y presioná Calcular.</div>'; $('limChip').innerHTML = ''; $('dlBox').hidden = true;
   $('alts').innerHTML = ''; $('why').textContent = ''; $('layers').innerHTML = ''; $('resSub').textContent = 'Presioná Calcular.';
+  $('fisBox').innerHTML = ''; S.anim = null; if (gFis) limpiar(gFis); $('v-phys').disabled = true; if (S.vista === 'phys') ponerVista('pack');
   if (S.vista === 'pack') dibujarAcomodo();
 }
 function anillo(f) {
@@ -465,7 +555,8 @@ function renderResultado() {
       </dl>
       ${K.manipulacion === 'manual' && man ? `<div class="lim${R.peso_bruto_kg > man + 1e-9 ? ' over' : ''}">${R.peso_bruto_kg > man + 1e-9 ? 'Supera' : 'Dentro del'} límite manual de ${fmt(man)} kg</div>` : `<div class="lim">Manipulación con ${K.manipulacion === 'autoelevador' ? 'autoelevador' : 'límite manual sin definir'}${E.carga_max_kg ? ` · carga máxima ${fmt(E.carga_max_kg)} kg` : ''}</div>`}
     </div>`;
-  $('resSub').textContent = `${P.nombre} en ${E.interior_mm.map(x => fmt(x)).join(' × ')} mm · calculado en ${fmt(T.duracion_ms)} ms.`;
+  $('fisBox').innerHTML = htmlFisica(R, K);
+  $('resSub').textContent = `${P.nombre} en ${E.interior_mm.map(x => fmt(x)).join(' × ')} mm · ${K.modo === 'granel' ? 'a granel' : 'ordenado'} · calculado en ${fmt(T.duracion_ms / 1000, 1)} s.`;
   $('alts').innerHTML = R.alternativas.map(a => `<div class="alt${a.id === R.estrategia_id ? ' on' : ''}"><span class="t">${esc(a.nombre)}${a.id === R.estrategia_id ? ' <span class="chip obj" style="padding:1px 7px;font-size:10px">elegido</span>' : ''}</span><span class="n">${fmt(a.piezas)}</span><span class="s">${esc(a.detalle)} · ${a.orientaciones} orientación${a.orientaciones === 1 ? '' : 'es'}</span></div>`).join('');
   $('why').textContent = R.explicacion;
   $('layLbl').textContent = `Armado por capas · ${R.estrategia || ''} (${fmt(R.maximo_posible)} u.)`;
@@ -514,13 +605,13 @@ function irPaso(p) {
 }
 let tAviso = null;
 function aviso(txt, malo) { const t = $('toast'); t.textContent = txt; t.className = 'toast' + (malo ? ' bad' : ''); t.hidden = false; clearTimeout(tAviso); tAviso = setTimeout(() => t.hidden = true, 5000); }
-function ocupado(txt) { $('busy').hidden = !txt; if (txt) $('busyTxt').textContent = txt; }
+function ocupado(txt, frac) { $('busy').hidden = !txt; if (txt) $('busyTxt').textContent = txt; $('busyPct').textContent = frac ? Math.round(frac * 100) + '%' : ''; }
 function mostrarLogin() { $('login').hidden = false; setTimeout(() => $('clave').focus(), 50); }
 
 // ═══════════════ EVENTOS ═══════════════
 function conectarEventos() {
   document.addEventListener('click', e => {
-    const b = e.target.closest('[data-paso],[data-fuente],[data-fam],[data-fin],[data-caja],[data-tipo],[data-manip],[data-prio],[data-vista]');
+    const b = e.target.closest('[data-paso],[data-fuente],[data-fam],[data-fin],[data-caja],[data-tipo],[data-manip],[data-prio],[data-vista],[data-modo],[data-accion]');
     if (!b || b.disabled) return;
     const d = b.dataset;
     if (d.paso !== undefined) irPaso(+d.paso);
@@ -532,6 +623,9 @@ function conectarEventos() {
     else if (d.manip) ponerManip(d.manip);
     else if (d.prio) ponerPrio(d.prio);
     else if (d.vista) ponerVista(d.vista);
+    else if (d.modo) ponerModo(d.modo);
+    else if (d.accion === 'validar') calcular({ validar: true });
+    else if (d.accion === 'verfisica') ponerVista('phys');
   });
   $('famFields').addEventListener('input', e => { const c = e.target.dataset.campo; if (!c) return; S.famVals[S.famId][c] = e.target.value; pedirAnalisis(); });
   $('famFields').addEventListener('change', e => { const c = e.target.dataset.campo; if (!c) return; S.famVals[S.famId][c] = e.target.value; pedirAnalisis(0); });
@@ -553,6 +647,8 @@ function conectarEventos() {
   $('backBtn').addEventListener('click', () => irPaso(S.paso - 1));
   $('nextBtn').addEventListener('click', () => S.paso === 3 ? calcular() : irPaso(S.paso + 1));
   $('btnPng').addEventListener('click', descargarImagen);
+  $('btnPlay').addEventListener('click', () => { if (!S.anim) return; S.anim.reproduciendo = !S.anim.reproduciendo; if (S.anim.reproduciendo && S.anim.t >= S.anim.dur) S.anim.t = 0; $('btnPlay').textContent = S.anim.reproduciendo ? '❚❚' : '▶'; });
+  $('reproT').addEventListener('input', e => { if (!S.anim) return; S.anim.reproduciendo = false; $('btnPlay').textContent = '▶'; S.anim.t = +e.target.value / 1000 * S.anim.dur; pintarCuadro(); });
   $('btnJson').addEventListener('click', descargarJson);
   $('btnSalir').addEventListener('click', async () => { try { await api('/v1/sesion', { method: 'DELETE' }); } catch (e) { /* nada */ } location.reload(); });
   $('loginForm').addEventListener('submit', async e => {
@@ -571,7 +667,7 @@ async function arrancar() {
   $('fmts').textContent = S.cat.formatos.filter(f => !['stp', 'igs'].includes(f)).map(f => f.toUpperCase()).join(' · ');
   $('fileIn').accept = S.cat.formatos.map(f => '.' + f).join(',');
   $('mat').innerHTML = S.cat.materiales.map(m => `<option value="${m.id}">${esc(m.nombre)} (${m.densidad_g_cm3} g/cm³)</option>`).join('');
-  renderFamilias(); renderCampos(); renderTerminaciones(); renderCajas(); elegirCaja(1); ponerManip('manual'); ponerPrio('cantidad');
+  renderFamilias(); renderCampos(); renderTerminaciones(); renderCajas(); elegirCaja(1); ponerManip('manual'); ponerPrio('cantidad'); ponerModo('ordenado');
   irPaso(0); pedirAnalisis(0);
 }
 addEventListener('DOMContentLoaded', async () => {

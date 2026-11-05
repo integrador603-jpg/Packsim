@@ -45,6 +45,7 @@ class CriteriosIn(BaseModel):
     mantener_posicion: bool = False
     prioridad: Literal["cantidad", "estabilidad", "picking"] = "cantidad"
     piezas_actuales: int = Field(default=0, ge=0, le=10_000_000)
+    validar_fisica: bool = False
 
 
 class ParametrosIn(BaseModel):

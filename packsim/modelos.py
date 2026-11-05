@@ -98,6 +98,7 @@ class Criterios:
     mantener_posicion: bool = False   # True: no acostar ni invertir la pieza
     prioridad: str = "cantidad"       # cantidad | estabilidad | picking
     piezas_actuales: int = 0          # auditoría (0 = no aplica)
+    validar_fisica: bool = False      # someter el acomodo ordenado a vibración de transporte
 
 
 @dataclass

@@ -29,7 +29,7 @@ def malla_visor(m: trimesh.Trimesh) -> bytes:
     return trimesh.Scene(m).export(file_type="glb")
 
 
-def correr(params: dict, datos: bytes | None, nombre_archivo: str | None) -> dict:
+def correr(params: dict, datos: bytes | None, nombre_archivo: str | None, avisar=None) -> dict:
     try:
         pz = params["pieza"]
         if pz["origen"] == "catalogo":
@@ -47,10 +47,11 @@ def correr(params: dict, datos: bytes | None, nombre_archivo: str | None) -> dic
                          manipulacion=c.get("manipulacion", "manual"),
                          peso_bruto_manipulable_kg=c.get("peso_bruto_manipulable_kg") or 0.0,
                          mantener_posicion=bool(c.get("mantener_posicion")), prioridad=c.get("prioridad", "cantidad"),
-                         piezas_actuales=c.get("piezas_actuales") or 0)
-        resultado = simular(pieza, emb, crit)
+                         piezas_actuales=c.get("piezas_actuales") or 0, validar_fisica=bool(c.get("validar_fisica")))
+        resultado = simular(pieza, emb, crit, avisar=avisar)
+        animacion = resultado.pop("_animacion", None)
         return {"ok": True, "resultado": resultado, "advertencias": avisos,
-                "glb": malla_visor(pieza.malla)}
+                "glb": malla_visor(pieza.malla), "animacion": animacion}
     except (ErrorLectura, ErrorCatalogo, ErrorSimulacion) as e:
         return {"ok": False, "error": str(e), "tipo": "datos"}
     except MemoryError:

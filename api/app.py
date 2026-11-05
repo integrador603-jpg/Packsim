@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -36,7 +37,7 @@ from packsim.lectura import FORMATOS
 from .config import Config
 from .esquemas import ParametrosIn, PiezaSolaIn, SesionIn
 from .seguridad import COOKIE, LimiteFrecuencia, clave_correcta, crear_token, exigir_acceso, ip_cliente, token_valido
-from .trabajos import Almacen, Ejecutor
+from .trabajos import Almacen, Ejecutor, ejecutar_aislado
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("packsim.api")
@@ -109,6 +110,25 @@ def crear_app(cfg: Config | None = None) -> FastAPI:
     def cerrar_sesion(response: Response):
         response.delete_cookie(COOKIE, path="/")
         return {"activa": False}
+
+    @app.get("/v1/diagnostico", dependencies=[Depends(exigir_acceso)])
+    async def diagnostico():
+        """Prueba el motor dentro del servidor (útil después de cada despliegue)."""
+        import shutil
+        prueba = {"pieza": {"origen": "catalogo", "familia": "tornillo_hexagonal", "valores": {"metrica": "M10", "largo": 50}},
+                  "embalaje": {"interior_mm": [300, 200, 150]}, "criterios": {}}
+        t0 = time.perf_counter()
+        r = await asyncio.to_thread(ejecutar_aislado, prueba, None, None, cfg.tiempo_max_s, cfg.memoria_max_mb)
+        return {
+            "motor_ok": bool(r.get("ok")) and r["resultado"]["resultado"]["maximo_posible"] > 0,
+            "error": r.get("error"),
+            "prueba_ms": round((time.perf_counter() - t0) * 1000),
+            "nucleos": os.cpu_count(),
+            "memoria_contenedor_mb": _memoria_contenedor_mb(),
+            "limite_por_simulacion_mb": cfg.memoria_max_mb,
+            "conversor_dwg": bool(os.environ.get("PACKSIM_DWG2DXF") or shutil.which("dwg2dxf")),
+            "version": __version__,
+        }
 
     # ───────────── catálogo ─────────────
     @app.get("/v1/catalogo", dependencies=[Depends(exigir_acceso)])
@@ -212,6 +232,16 @@ async def _leer_limitado(archivo: UploadFile, mb: int) -> bytes:
         partes.append(bloque)
     await archivo.close()
     return b"".join(partes)
+
+
+def _memoria_contenedor_mb():
+    for ruta in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            v = open(ruta).read().strip()
+            return None if v == "max" or int(v) > 1 << 50 else round(int(v) / 1024 / 1024)
+        except (OSError, ValueError):
+            pass
+    return None
 
 
 def _msg(e: dict) -> str:

@@ -157,6 +157,30 @@ def test_proceso_que_revienta_no_tumba_la_api():
     assert not r["ok"] and "inesperada" in r["error"]
 
 
+def test_memoria_se_controla_por_uso_real_y_no_por_reserva():
+    # el error "cannot allocate memory for thread-local data" venía de limitar la reserva (RLIMIT_AS)
+    from tests.ayuda_procesos import sin_limite_de_reserva
+    r = ejecutar_aislado({}, None, None, tiempo_max_s=10, memoria_mb=512, destino=sin_limite_de_reserva)
+    assert r["ok"] and r["as"]
+
+
+def test_proceso_que_usa_demasiada_memoria_se_corta():
+    from tests.ayuda_procesos import gloton
+    r = ejecutar_aislado({}, None, None, tiempo_max_s=30, memoria_mb=200, destino=gloton, intervalo_s=0.05)
+    assert not r["ok"] and r["tipo"] == "limite" and "200 MB" in r["error"]
+
+
+def test_falla_del_lector_tiene_mensaje_propio():
+    from tests.ayuda_procesos import aborta
+    r = ejecutar_aislado({}, None, None, tiempo_max_s=10, memoria_mb=512, destino=aborta)
+    assert not r["ok"] and r["tipo"] == "lector"
+
+
+def test_diagnostico(cliente):
+    d = cliente.get("/v1/diagnostico").json()
+    assert d["motor_ok"] is True and d["nucleos"] >= 1
+
+
 def test_resultados_vencen():
     a = Almacen(vencimiento_s=0, maximo=10)
     t = a.nuevo(); t.estado = "listo"; t.terminado = time.time() - 1

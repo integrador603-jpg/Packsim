@@ -72,6 +72,7 @@ PACKSIM_CLAVE="una-contraseña-larga" PACKSIM_SECRETO="$(openssl rand -hex 32)" 
 | POST | `/v1/sesion` | Inicia sesión con `{"clave": "..."}` (cookie firmada, `HttpOnly`, `SameSite=Strict`) |
 | GET | `/v1/catalogo` | Piezas, materiales, embalajes de referencia y formatos aceptados |
 | GET | `/v1/embalajes/tara?largo=&ancho=&alto=&tipo=` | Tara estimada de un embalaje a medida |
+| GET | `/v1/diagnostico` | Prueba el motor dentro del servidor (núcleos, memoria, conversor DWG) |
 | POST | `/v1/piezas` | Analiza solo la pieza (ficha y malla para la vista previa) → `202` con el `id` |
 | POST | `/v1/simulaciones` | Multipart: `parametros` (JSON) y `archivo` opcional → `202` con el `id` |
 | GET | `/v1/trabajos/{id}` | Estado (`en_cola`, `procesando`, `listo`, `error`) y resultado |
@@ -92,7 +93,7 @@ Para integraciones se usa `Authorization: Bearer <clave>` con las claves de `PAC
 **Cómo protege los datos**
 
 - El archivo se lee en memoria; los conversores usan una carpeta temporal que se borra siempre.
-- Cada simulación corre en un **proceso aparte** con tiempo y memoria máximos: un archivo dañado no tumba el servidor.
+- Cada simulación corre en un **proceso aparte** vigilado: se corta si supera el tiempo o la memoria **usada** (no la reservada). Un archivo dañado no tumba el servidor.
 - Los resultados viven en memoria y **vencen a la hora**. En los logs solo queda la huella del archivo, nunca el nombre ni el contenido.
 - Límite de tamaño de archivo y de simulaciones por hora por IP; demora ante contraseñas incorrectas.
 

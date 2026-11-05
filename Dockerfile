@@ -18,7 +18,8 @@ COPY --from=libredwg /opt/libredwg /opt/libredwg
 ENV PATH="/opt/libredwg/bin:${PATH}" \
     LD_LIBRARY_PATH="/opt/libredwg/lib" \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 COPY requirements.txt .

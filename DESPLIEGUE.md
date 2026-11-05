@@ -19,6 +19,7 @@ Railway construye la imagen con el `Dockerfile` del repositorio y vuelve a despl
    El resto de las variables está en el README.
 5. **Generá la dirección pública:** servicio → *Settings* → *Networking* → *Generate Domain*. Queda algo como `packsim-production.up.railway.app`.
 6. **Abrí la dirección**, ingresá la contraseña y probá con una pieza del catálogo.
+7. **Verificá el motor:** con la sesión iniciada, abrí `https://<tu-dominio>/v1/diagnostico`. Tiene que decir `"motor_ok": true` y `"conversor_dwg": true`.
 
 ## Actualizaciones
 
@@ -46,4 +47,5 @@ Los tests corren solos en GitHub (pestaña *Actions*) en cada pull request. No h
 | El despliegue queda en "Healthcheck failed" | *Deploy Logs*: casi siempre es una variable mal cargada |
 | La página pide contraseña y no entra | Revisá `PACKSIM_CLAVE`; no tiene que tener espacios al principio ni al final |
 | "Llegaste al máximo de simulaciones por hora" | Subí `PACKSIM_LIMITE_POR_HORA` |
+| "El servidor se quedó sin memoria" o "El lector 3D falló" | Abrí `/v1/diagnostico` y mirá *Deploy Logs*: el log dice el código de salida y la memoria máxima usada |
 | Las simulaciones de piezas grandes se cancelan | Subí `PACKSIM_TIEMPO_MAX_S` o `PACKSIM_MEMORIA_MAX_MB`, o exportá la pieza con menos detalle |

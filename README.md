@@ -149,7 +149,10 @@ Verifican pesos contra tablas, conteos exactos, **cero colisiones** entre piezas
 
 `prototipo/packsim_maqueta.html` es la maqueta funcional que define el flujo y las pantallas (corre sola en el navegador). Es la referencia para la interfaz de la etapa 3; la física a granel de la maqueta no es confiable con piezas chicas y se reemplaza por la del servidor.
 
+## Despliegue
+
+Ver [DESPLIEGUE.md](DESPLIEGUE.md): Railway con el `Dockerfile` del repositorio, tests automáticos en GitHub Actions.
+
 ## Próximas etapas
 
 4. Física en el servidor con PyBullet (volcado a granel y validación con vibración).
-5. Despliegue en Railway con Dockerfile y tests automáticos.

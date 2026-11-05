@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Packsim</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+<style>
+/* Layout: herramienta de escritorio en 3 columnas — flujo por pasos | visor 3D | ficha y resultado. Tema claro técnico, acento azul acero. */
+:root{
+  --bg:#eef0f2; --panel:#ffffff; --panel2:#f6f7f9; --line:#dde1e6; --line2:#c9cfd6;
+  --ink:#1b2128; --ink2:#56616d; --ink3:#8a949f;
+  --acc:#1f5f9e; --acc2:#e8f0f8; --ok:#1e8a5a; --okbg:#e6f4ed; --warn:#b26a00; --warnbg:#fdf3e2; --bad:#b83a3a; --badbg:#fbeaea;
+  --f-ui:'IBM Plex Sans','Segoe UI',system-ui,sans-serif; --f-num:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{font-family:var(--f-ui);background:var(--bg);color:var(--ink);font-size:13px;display:flex;flex-direction:column;overflow:hidden}
+button,input,select{font-family:inherit;font-size:inherit;color:inherit}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+
+/* barra superior */
+.top{height:52px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 16px;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;letter-spacing:-.2px}
+.brand i{width:22px;height:22px;border-radius:5px;background:var(--acc);display:grid;place-items:center}
+.brand i svg{display:block}
+.proj{color:var(--ink2);font-size:12px;border-left:1px solid var(--line);padding-left:16px}
+.proj b{color:var(--ink);font-weight:500}
+.steps{display:flex;gap:4px;margin-left:auto;margin-right:auto}
+.step{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:7px;border:none;background:none;cursor:pointer;color:var(--ink3);font-weight:500}
+.step b{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--line2);display:grid;place-items:center;font-size:11px;font-family:var(--f-num)}
+.step.on{color:var(--ink);background:var(--acc2)}
+.step.on b{background:var(--acc);border-color:var(--acc);color:#fff}
+.step.done b{border-color:var(--ok);color:var(--ok)}
+.step:hover:not(.on){color:var(--ink)}
+.sep{width:18px;height:1px;background:var(--line2);align-self:center}
+.btn{padding:7px 14px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:var(--acc);color:var(--acc)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.pri:hover{background:#184e83;color:#fff}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn.w{width:100%}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,.step:focus-visible,.fam:focus-visible,.sw:focus-visible,.seg button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+
+.main{flex:1;display:flex;min-height:0}
+.left{width:350px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.left .scroll{flex:1;overflow-y:auto;padding:16px}
+.left .foot{border-top:1px solid var(--line);padding:12px 16px;display:flex;gap:8px}
+.right{width:330px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto}
+h2{font-size:15px;font-weight:600;margin-bottom:3px;text-wrap:balance}
+.sub{color:var(--ink2);font-size:12px;margin-bottom:14px;line-height:1.5}
+.lbl{font-size:10.5px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.07em;margin:16px 0 8px}
+.lbl:first-child{margin-top:0}
+
+.seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px}
+.seg button{flex:1;border:none;background:none;padding:6px 8px;border-radius:6px;cursor:pointer;color:var(--ink2);font-weight:500;font-size:12px}
+.seg button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(20,30,40,.12)}
+
+.search{width:100%;padding:8px 10px;border:1px solid var(--line2);border-radius:7px;background:var(--panel);margin:12px 0 10px}
+.search:focus{outline:none;border-color:var(--acc)}
+.fams{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.fam{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:9px 4px 7px;cursor:pointer;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
+.fam:hover{border-color:var(--line2);background:var(--panel2)}
+.fam.on{border-color:var(--acc);background:var(--acc2)}
+.fam svg{color:var(--ink2)}
+.fam.on svg{color:var(--acc)}
+.fam span{font-size:10.5px;line-height:1.25;color:var(--ink2)}
+.fam.on span{color:var(--acc);font-weight:500}
+
+.row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.row label{flex:1;color:var(--ink2);font-size:12px;min-width:0}
+.row input[type=number],.row select,.row input[type=text]{width:118px;padding:5px 8px;border:1px solid var(--line2);border-radius:6px;background:var(--panel);font-family:var(--f-num);font-size:12px;text-align:right}
+.row select{text-align:left;font-family:var(--f-ui)}
+.row input:focus,.row select:focus{outline:none;border-color:var(--acc)}
+.row .u{width:22px;font-size:11px;color:var(--ink3)}
+.norma{font-family:var(--f-num);font-size:11px;color:var(--acc);background:var(--acc2);padding:2px 7px;border-radius:4px}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink2);margin-bottom:8px;cursor:pointer;line-height:1.45}
+.chk input{margin-top:2px;accent-color:var(--acc)}
+
+.sws{display:flex;flex-wrap:wrap;gap:6px}
+.sw{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;padding:3px 9px 3px 3px;cursor:pointer;background:var(--panel);font-size:11.5px;color:var(--ink2)}
+.sw i{width:18px;height:18px;border-radius:50%;border:1px solid rgba(0,0,0,.15)}
+.sw.on{border-color:var(--acc);color:var(--ink);background:var(--acc2)}
+.sw input[type=color]{width:18px;height:18px;border:none;padding:0;background:none;border-radius:50%;cursor:pointer}
+
+.drop{border:1.5px dashed var(--line2);border-radius:10px;padding:22px 12px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:4px;align-items:center;background:var(--panel2);margin-top:12px}
+.drop:hover,.drop.over{border-color:var(--acc);background:var(--acc2)}
+.drop b{font-size:13px}
+.drop span{font-size:12px;color:var(--ink2)}
+.drop small{font-family:var(--f-num);font-size:10.5px;color:var(--ink3);letter-spacing:.05em;margin-top:4px}
+.msg{font-size:12px;line-height:1.5;padding:8px 10px;border-radius:7px;margin-top:10px}
+.msg.info{background:var(--acc2);color:#174a7c}
+.msg.ok{background:var(--okbg);color:#14603f}
+.msg.warn{background:var(--warnbg);color:#7a4a00}
+.msg.bad{background:var(--badbg);color:#8a2323}
+
+.boxes{display:flex;flex-direction:column;gap:6px}
+.boxopt{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;background:var(--panel);text-align:left;width:100%}
+.boxopt:hover{background:var(--panel2)}
+.boxopt.on{border-color:var(--acc);background:var(--acc2)}
+.boxopt svg{flex-shrink:0;color:var(--ink3)}
+.boxopt.on svg{color:var(--acc)}
+.boxopt .t{font-weight:500;font-size:12.5px}
+.boxopt .d{font-family:var(--f-num);font-size:11px;color:var(--ink2)}
+
+/* visor */
+.center{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.vbar{height:42px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 12px;flex-shrink:0}
+.vbar .seg{padding:2px}
+.vbar .seg button{padding:4px 12px}
+.vp{flex:1;position:relative;overflow:hidden}
+#c3d{display:block;width:100%;height:100%;cursor:grab}
+#c3d:active{cursor:grabbing}
+.ov{position:absolute;pointer-events:none}
+.dimtag{left:14px;top:12px;background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:12px;line-height:1.6}
+.dimtag b{font-family:var(--f-num);font-weight:500}
+.cut{right:14px;top:12px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:8px;padding:8px 11px;width:190px;pointer-events:auto}
+.cut .h{display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin-bottom:4px}
+.cut input{width:100%;accent-color:var(--acc)}
+.hud{right:14px;bottom:14px;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:210px}
+.hud .ph{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--acc2);color:var(--acc);margin-bottom:6px}
+.hud .big{font-family:var(--f-num);font-size:28px;font-weight:600;line-height:1.1}
+.hud .r{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink2);margin-top:3px;gap:14px}
+.hud .r b{font-family:var(--f-num);font-weight:500;color:var(--ink)}
+.empty3d{inset:0;display:grid;place-items:center;color:var(--ink3);font-size:13px}
+
+/* panel derecho */
+.card{padding:16px;border-bottom:1px solid var(--line)}
+.card h3{font-size:10.5px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.card h3 span{text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink2)}
+.pname{font-size:14px;font-weight:600;margin-bottom:2px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:5px 10px;font-size:12px;margin-top:10px}
+.kv dt{color:var(--ink2)}
+.kv dd{font-family:var(--f-num);text-align:right}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px;border:1px solid rgba(0,0,0,.2)}
+
+.gauge{display:flex;align-items:center;gap:14px}
+.gauge svg{flex-shrink:0}
+.gauge .gv{font-family:var(--f-num);font-size:30px;font-weight:600;line-height:1}
+.gauge .gl{font-size:12px;color:var(--ink2);line-height:1.45;margin-top:4px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+.kpi .v{font-family:var(--f-num);font-size:18px;font-weight:600}
+.kpi .l{font-size:11px;color:var(--ink2);margin-top:1px}
+.bar{height:5px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc)}
+.bar i.warn{background:var(--warn)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:12px}
+.chip.geo{background:var(--acc2);color:var(--acc)}
+.chip.peso{background:var(--warnbg);color:var(--warn)}
+.chip.obj{background:var(--okbg);color:var(--ok)}
+.alts{display:flex;flex-direction:column;gap:5px}
+.alt{display:grid;grid-template-columns:1fr auto;gap:1px 10px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer;background:var(--panel);text-align:left;width:100%}
+.alt:hover{background:var(--panel2)}
+.alt.on{border-color:var(--acc);background:var(--acc2)}
+.alt .t{font-size:12px;font-weight:500}
+.alt .n{font-family:var(--f-num);font-size:16px;font-weight:600;grid-row:span 2;align-self:center}
+.alt .s{font-size:11px;color:var(--ink2)}
+.alt.na{cursor:default;opacity:.6}
+.why{font-size:12px;line-height:1.6;color:var(--ink2)}
+.gross{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--panel2)}
+.gross .gh{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink2)}
+.gross .gh b{font-family:var(--f-num);font-size:20px;color:var(--ink);font-weight:600}
+.stack{position:relative;display:flex;height:8px;border-radius:4px;margin:9px 0 2px;background:var(--line)}
+.stack i{display:block;height:100%}
+.stack i:first-child{border-radius:4px 0 0 4px}
+.stack .mk{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink)}
+.gross .kv{margin-top:8px}
+.gross .kv dt i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+.gross .kv .tot{font-weight:600;color:var(--ink);border-top:1px solid var(--line2);padding-top:5px}
+.gross .lim{font-size:11px;margin-top:7px;color:var(--ink2)}
+.gross .lim.over{color:var(--bad);font-weight:500}
+.vbar .rng{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink2)}
+.vbar .rng input{width:96px;accent-color:var(--acc)}
+.why b{color:var(--ink);font-weight:500}
+.layers{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+.layers td{padding:4px 0;border-bottom:1px solid var(--line)}
+.layers td:last-child{text-align:right;font-family:var(--f-num)}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(20,28,36,.45);display:grid;place-items:center;z-index:20;padding:16px}
+.modal .box{background:var(--panel);border-radius:12px;width:min(760px,100%);max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
+.modal .hd{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.modal .hd b{flex:1}
+.modal pre{flex:1;overflow:auto;padding:14px 16px;font-family:var(--f-num);font-size:11.5px;line-height:1.5;background:var(--panel2);margin:0}
+
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><i><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="1.6"><path d="M2 4.5L7 2l5 2.5v5L7 12 2 9.5z"/><path d="M2 4.5L7 7l5-2.5M7 7v5"/></svg></i>Packsim</div>
+  <div class="proj">Proyecto <b id="projName">Simulación sin título</b></div>
+  <nav class="steps" aria-label="Pasos">
+    <button class="step on" id="st0" onclick="goStep(0)"><b>1</b>Pieza</button><span class="sep"></span>
+    <button class="step" id="st1" onclick="goStep(1)"><b>2</b>Embalaje</button><span class="sep"></span>
+    <button class="step" id="st2" onclick="goStep(2)"><b>3</b>Criterios</button><span class="sep"></span>
+    <button class="step" id="st3" onclick="goStep(3)"><b>4</b>Resultado</button>
+  </nav>
+  <button class="btn" onclick="openExport()">Exportar</button>
+</header>
+
+<div class="main">
+<!-- ───────── IZQUIERDA: flujo ───────── -->
+<aside class="left">
+  <div class="scroll">
+
+    <!-- PASO 1 -->
+    <section id="p0">
+      <h2>¿Qué pieza vas a embalar?</h2>
+      <p class="sub">Elegila del catálogo de minutería normalizada o subí el archivo 3D. No hace falta dibujar nada.</p>
+      <div class="seg" role="tablist">
+        <button id="src-cat" class="on" onclick="setSource('cat')">Catálogo</button>
+        <button id="src-file" onclick="setSource('file')">Archivo 3D</button>
+      </div>
+
+      <div id="srcCat">
+        <input class="search" id="q" type="search" placeholder="Buscar: tornillo, tuerca, 6204, DIN 125…" oninput="renderFams()" aria-label="Buscar en el catálogo">
+        <div class="fams" id="fams"></div>
+        <div class="lbl" style="margin-top:18px">Medidas <span class="norma" id="famNorma" style="float:right"></span></div>
+        <div id="famFields"></div>
+      </div>
+
+      <div id="srcFile" hidden>
+        <label class="drop" id="drop" for="fileIn">
+          <input type="file" id="fileIn" hidden accept=".step,.stp,.iges,.igs,.stl,.obj,.glb,.dxf,.dwg" onchange="onFile(this.files[0]); this.value=''">
+          <b>Arrastrá el archivo de la pieza</b><span>o hacé clic para buscarlo</span>
+          <small>STEP · IGES · STL · OBJ · GLB · DXF · DWG</small>
+        </label>
+        <div class="msg info" id="impMsg">Exportá la pieza desde el CAD. STEP es el formato más fiel.</div>
+        <div class="lbl">Datos de la pieza</div>
+        <div class="row"><label for="impName">Nombre / código</label><input type="text" id="impName" value="" placeholder="ej. 87654321" style="text-align:left;font-family:var(--f-ui)" oninput="if(part&&part.src==='file'){part.name=this.value||part.fileName;renderPartCard()}"></div>
+        <div class="row"><label for="impUnit">Unidades del archivo</label><select id="impUnit" onchange="rebuildImport()"><option value="0.1">milímetros</option><option value="1">centímetros</option><option value="100">metros</option><option value="2.54">pulgadas</option></select></div>
+        <div class="row"><label for="impKg">Peso unitario real</label><input type="number" id="impKg" min="0" step="0.001" placeholder="calcular" oninput="updateMass()"><span class="u">kg</span></div>
+      </div>
+
+      <div class="lbl">Material</div>
+      <div class="row"><label for="mat">Material</label><select id="mat" onchange="updateMass()" style="width:190px"></select></div>
+      <div class="lbl">Color / terminación</div>
+      <div class="sws" id="sws"></div>
+    </section>
+
+    <!-- PASO 2 -->
+    <section id="p1" hidden>
+      <h2>¿En qué embalaje?</h2>
+      <p class="sub">Medidas interiores útiles. Elegí uno del catálogo o cargá uno a medida.</p>
+      <div class="boxes" id="boxList"></div>
+      <div class="lbl">Tipo de embalaje</div>
+      <div class="seg">
+        <button id="bt-carton" class="on" onclick="setBoxType('carton')">Cartón</button>
+        <button id="bt-madera" onclick="setBoxType('madera')">Madera</button>
+        <button id="bt-plastico" onclick="setBoxType('plastico')">Plástico</button>
+      </div>
+      <div class="lbl">Medidas interiores</div>
+      <div class="row"><label for="bL">Largo</label><input type="number" id="bL" min="1" onchange="boxCustom()"><span class="u">mm</span></div>
+      <div class="row"><label for="bW">Ancho</label><input type="number" id="bW" min="1" onchange="boxCustom()"><span class="u">mm</span></div>
+      <div class="row"><label for="bH">Alto</label><input type="number" id="bH" min="1" onchange="boxCustom()"><span class="u">mm</span></div>
+      <div class="row"><label for="bKg">Carga máxima (contenido)</label><input type="number" id="bKg" min="0" step="1" onchange="boxCustom()"><span class="u">kg</span></div>
+      <div class="lbl">Peso del embalaje</div>
+      <div class="row"><label for="bTare">Embalaje vacío (tara)</label><input type="number" id="bTare" min="0" step="0.05" oninput="tareSrc='man'; weightsChanged()"><span class="u">kg</span></div>
+      <p class="sub" id="tareHint" style="margin:-3px 0 10px;font-size:11px"></p>
+      <div class="row"><label for="bFill">Relleno y separadores</label><input type="number" id="bFill" value="0" min="0" step="0.05" oninput="weightsChanged()"><span class="u">kg</span></div>
+    </section>
+
+    <!-- PASO 3 -->
+    <section id="p2" hidden>
+      <h2>¿Con qué criterios?</h2>
+      <p class="sub">Definen qué cuenta como "el mejor" acomodo y cuál es el 100% de saturación.</p>
+      <div class="lbl">Modo de carga</div>
+      <div class="seg">
+        <button id="m-ord" class="on" onclick="setMode('ord')">Ordenado</button>
+        <button id="m-bulk" onclick="setMode('bulk')">A granel</button>
+      </div>
+      <p class="sub" style="margin:8px 0 0" id="modeHint">Las piezas se acomodan una por una siguiendo un patrón.</p>
+      <div class="lbl">Restricciones</div>
+      <div class="row"><label for="gap">Holgura entre piezas</label><input type="number" id="gap" value="1" min="0" step="0.5"><span class="u">mm</span></div>
+      <div class="lbl">Manipulación</div>
+      <div class="seg">
+        <button id="mh-man" class="on" onclick="setHandling('man')">Manual</button>
+        <button id="mh-fork" onclick="setHandling('fork')">Autoelevador</button>
+      </div>
+      <p class="sub" style="margin:8px 0 8px" id="mhHint">El peso máximo manipulable se controla sobre el peso bruto: piezas + embalaje + relleno.</p>
+      <div class="row" id="manRow"><label for="manKg">Peso bruto máximo manipulable</label><input type="number" id="manKg" value="15" min="0" step="1"><span class="u">kg</span></div>
+      <label class="chk"><input type="checkbox" id="upright"> <span>Mantener la pieza en la posición del catálogo o el archivo (no acostar ni invertir)</span></label>
+      <div class="lbl">Prioridad ante empate</div>
+      <div class="seg">
+        <button id="pr-qty" class="on" onclick="setPrio('qty')">Cantidad</button>
+        <button id="pr-stab" onclick="setPrio('stab')">Estabilidad</button>
+        <button id="pr-pick" onclick="setPrio('pick')">Picking</button>
+      </div>
+      <p class="sub" style="margin:8px 0 0" id="prioHint">Gana el acomodo con más piezas.</p>
+      <div class="lbl">Auditoría (opcional)</div>
+      <div class="row"><label for="audit">Piezas que trae hoy la caja</label><input type="number" id="audit" min="0" step="1" placeholder="—"><span class="u">u.</span></div>
+    </section>
+
+    <!-- PASO 4 -->
+    <section id="p3" hidden>
+      <h2>Resultado</h2>
+      <p class="sub" id="resSub">Calculando…</p>
+      <div class="lbl">Alternativas evaluadas</div>
+      <div class="alts" id="alts"></div>
+      <div class="lbl">Por qué este acomodo</div>
+      <div class="why" id="why"></div>
+      <div class="lbl" id="layLbl">Armado por capas</div>
+      <table class="layers" id="layers"></table>
+    </section>
+  </div>
+  <div class="foot">
+    <button class="btn" id="backBtn" onclick="goStep(step-1)">Atrás</button>
+    <button class="btn pri" id="nextBtn" style="flex:1" onclick="goStep(step+1)">Continuar</button>
+  </div>
+</aside>
+
+<!-- ───────── CENTRO: visor ───────── -->
+<section class="center">
+  <div class="vbar">
+    <div class="seg" role="tablist" aria-label="Vista">
+      <button id="v-part" class="on" onclick="setView('part')">Pieza</button>
+      <button id="v-pack" onclick="setView('pack')">Acomodo</button>
+      <button id="v-phys" onclick="setView('phys')">Física</button>
+    </div>
+    <div style="flex:1"></div>
+    <label class="rng" for="trans">Transparencia de la caja <input type="range" id="trans" min="0" max="90" value="55" oninput="applyTrans()"></label>
+    <label class="chk" style="margin:0;align-items:center"><input type="checkbox" id="colOri" onchange="drawPack()"> Color por orientación</label>
+    <button class="btn sm" onclick="fitView()">Encuadrar</button>
+  </div>
+  <div class="vp" id="vp">
+    <canvas id="c3d" aria-label="Vista 3D"></canvas>
+    <div class="ov dimtag" id="dimTag"></div>
+    <div class="ov cut" id="cutBox" hidden>
+      <div class="h"><span>Ver hasta la capa</span><span class="num" id="cutLbl">todas</span></div>
+      <input type="range" id="cut" min="0" max="100" value="100" oninput="applyCut()" aria-label="Corte por altura">
+    </div>
+    <div class="ov hud" id="hud" hidden>
+      <span class="ph" id="hPh">—</span>
+      <div style="font-size:11px;color:var(--ink2)">Piezas dentro del embalaje</div>
+      <div class="big" id="hIn">0</div>
+      <div class="r">Volcadas <b id="hAll">0</b></div>
+      <div class="r">Sobresalen <b id="hOut">0</b></div>
+      <div class="r">Tiempo simulado <b id="hT">0.0 s</b></div>
+    </div>
+    <div class="ov empty3d" id="empty3d" hidden>Elegí una pieza para empezar</div>
+  </div>
+</section>
+
+<!-- ───────── DERECHA: ficha + resultado ───────── -->
+<aside class="right">
+  <div class="card">
+    <h3>Pieza</h3>
+    <div class="pname" id="pName">—</div>
+    <div style="font-size:12px;color:var(--ink2)" id="pDesc"></div>
+    <dl class="kv" id="pKv"></dl>
+  </div>
+  <div class="card">
+    <h3>Embalaje <span id="eName"></span></h3>
+    <dl class="kv" id="eKv"></dl>
+  </div>
+  <div class="card" id="resCard">
+    <h3>Saturación <span id="limChip"></span></h3>
+    <div id="resBody"><div class="why">Completá los pasos y vas a ver acá la saturación, el peso y la cantidad por embalaje.</div></div>
+  </div>
+  <div class="card" id="physCard">
+    <h3>Validación física</h3>
+    <div class="why" id="physTxt" style="margin-bottom:10px">Simula gravedad, fricción y vibración de transporte con la masa real de cada pieza.</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="btn w" id="btnVal" onclick="startValidate()">Validar el acomodo con vibración</button>
+      <button class="btn w" id="btnBulk" onclick="startBulk()">Simular volcado a granel</button>
+    </div>
+  </div>
+</aside>
+</div>
+
+<div class="modal" id="modal" hidden onclick="if(event.target===this)this.hidden=true">
+  <div class="box">
+    <div class="hd"><b>Resultado en JSON (contrato v1)</b><button class="btn sm" onclick="copyJson()" id="cpBtn">Copiar</button><button class="btn sm pri" onclick="downloadJson()">Descargar</button><button class="btn sm" onclick="$('modal').hidden=true">Cerrar</button></div>
+    <pre id="jsonOut"></pre>
+  </div>
+</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 0) => (+v).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+// ═════════════════════ CATÁLOGO ═════════════════════
+// Medidas en mm según norma (valores nominales).
+const MS = ['M6','M8','M10','M12','M16','M20'];
+const T_HEX = { M6:{d:6,s:10,k:4,m:5.2}, M8:{d:8,s:13,k:5.3,m:6.8}, M10:{d:10,s:16,k:6.4,m:8.4}, M12:{d:12,s:18,k:7.5,m:10.8}, M16:{d:16,s:24,k:10,m:14.8}, M20:{d:20,s:30,k:12.5,m:18} };
+const T_ALLEN = { M6:10, M8:13, M10:16, M12:18, M16:24, M20:30 };
+const T_985 = { M6:6, M8:8, M10:10, M12:12, M16:16, M20:20 };
+const T_125 = { M6:[6.4,12,1.6], M8:[8.4,16,1.6], M10:[10.5,20,2], M12:[13,24,2.5], M16:[17,30,3], M20:[21,37,3] };
+const T_127 = { M6:[6.1,11.8,1.6], M8:[8.1,14.8,2], M10:[10.2,18.1,2.2], M12:[12.2,21.1,2.5], M16:[16.2,27.4,3.5], M20:[20.2,33.6,4] };
+const T_62 = { '6201':[12,32,10,0.037], '6202':[15,35,11,0.045], '6203':[17,40,12,0.065], '6204':[20,47,14,0.106], '6205':[25,52,15,0.128], '6206':[30,62,16,0.199], '6207':[35,72,17,0.288], '6208':[40,80,18,0.366] };
+const LEN_HEX = [16,20,25,30,35,40,50,60,70,80,100,120,150];
+const LEN_ALLEN = [10,12,16,20,25,30,35,40,50,60,80,100];
+const corner = s => s*2/Math.sqrt(3);
+
+const ICON = {
+  hexbolt:`<path d="M6 3h10l-1.5 4h-7z" stroke-linejoin="round"/><path d="M9 7v13h4V7M9 10h4M9 13h4M9 16h4"/>`,
+  allen:`<rect x="6" y="3" width="10" height="5" rx="1"/><path d="M9 8v12h4V8M9.5 11h3M9.5 14h3M9.5 17h3"/><path d="M10 5.5h2"/>`,
+  nut:`<polygon points="11,3 18,7 18,15 11,19 4,15 4,7"/><circle cx="11" cy="11" r="3.3"/>`,
+  locknut:`<polygon points="11,5 17,8.5 17,14.5 11,18 5,14.5 5,8.5"/><path d="M7 5.5Q11 2 15 5.5"/><circle cx="11" cy="11.5" r="2.6"/>`,
+  washer:`<ellipse cx="11" cy="11" rx="8" ry="4.5"/><ellipse cx="11" cy="11" rx="3.4" ry="1.8"/>`,
+  grower:`<path d="M4.5 12a7 4 0 1 0 2.5-4.5"/><path d="M7 7.5l1.5 2.5"/><ellipse cx="11" cy="11.5" rx="3" ry="1.6"/>`,
+  rod:`<path d="M5 17L17 5M7 19L19 7"/><path d="M8 14l2 2M10 12l2 2M12 10l2 2M14 8l2 2"/>`,
+  bushing:`<ellipse cx="11" cy="6" rx="6.5" ry="2.4"/><ellipse cx="11" cy="6" rx="3" ry="1.1"/><path d="M4.5 6v10a6.5 2.4 0 0 0 13 0V6"/>`,
+  bearing:`<circle cx="11" cy="11" r="8"/><circle cx="11" cy="11" r="3.2"/><circle cx="11" cy="5.6" r="1.2"/><circle cx="16.4" cy="11" r="1.2"/><circle cx="11" cy="16.4" r="1.2"/><circle cx="5.6" cy="11" r="1.2"/>`,
+};
+// cada constructor devuelve componentes (mm, eje Y, y = centro del componente)
+const FAM = [
+  { id:'hexbolt', name:'Tornillo hexagonal', norma:'ISO 4017 · DIN 933', tags:'bulon perno cabeza hexagonal 933 4017',
+    fields:[['m','Métrica',MS,'M10'],['L','Largo bajo cabeza',LEN_HEX,50,'mm']],
+    build:({m,L}) => { const t = T_HEX[m], e = corner(t.s);
+      return { desc:`${m} × ${L}`, comps:[{k:'hex',e,h:t.k,y:t.k/2},{k:'cyl',D:t.d,h:L,y:t.k + L/2}], headed:{rH:e/2, rS:t.d/2, k:t.k} }; } },
+  { id:'allen', name:'Tornillo Allen', norma:'ISO 4762 · DIN 912', tags:'cabeza cilindrica allen 912 4762 socket',
+    fields:[['m','Métrica',MS,'M8'],['L','Largo bajo cabeza',LEN_ALLEN,30,'mm']],
+    build:({m,L}) => { const t = T_HEX[m], dk = T_ALLEN[m];
+      return { desc:`${m} × ${L}`, comps:[{k:'cyl',D:dk,h:t.d,y:t.d/2},{k:'cyl',D:t.d,h:L,y:t.d + L/2}], headed:{rH:dk/2, rS:t.d/2, k:t.d} }; } },
+  { id:'nut', name:'Tuerca hexagonal', norma:'ISO 4032 · DIN 934', tags:'tuerca 934 4032',
+    fields:[['m','Métrica',MS,'M10']],
+    build:({m}) => { const t = T_HEX[m]; return { desc:m, comps:[{k:'hexnut',e:corner(t.s),di:t.d,h:t.m,y:t.m/2}] }; } },
+  { id:'locknut', name:'Tuerca autofrenante', norma:'DIN 985', tags:'tuerca nylon autofrenante 985 seguridad',
+    fields:[['m','Métrica',MS,'M10']],
+    build:({m}) => { const t = T_HEX[m], H = T_985[m], hb = H*0.72;
+      return { desc:m, comps:[{k:'hexnut',e:corner(t.s),di:t.d,h:hb,y:hb/2},{k:'ring',D:t.s*0.96,di:t.d,h:H - hb,y:hb + (H - hb)/2,tint:0xdfe6ee}] }; } },
+  { id:'washer', name:'Arandela plana', norma:'ISO 7089 · DIN 125', tags:'arandela plana 125 7089',
+    fields:[['m','Para métrica',MS,'M10']],
+    build:({m}) => { const [d1,d2,h] = T_125[m]; return { desc:`${m} (${d1}×${d2}×${h})`, comps:[{k:'ring',D:d2,di:d1,h,y:h/2}] }; } },
+  { id:'grower', name:'Arandela grower', norma:'DIN 127 B', tags:'arandela presion grower 127 elastica',
+    fields:[['m','Para métrica',MS,'M10']],
+    build:({m}) => { const [d1,d2,s] = T_127[m], h = s*1.8; return { desc:m, comps:[{k:'ring',D:d2,di:d1,h,y:h/2,vol:Math.PI*((d2/2)**2 - (d1/2)**2)*s}] }; } },
+  { id:'rod', name:'Varilla roscada', norma:'DIN 975', tags:'varilla roscada esparrago 975',
+    fields:[['m','Métrica',MS,'M10'],['L','Largo',[100,250,500,1000],250,'mm']],
+    build:({m,L}) => { const t = T_HEX[m]; return { desc:`${m} × ${L}`, comps:[{k:'cyl',D:t.d*0.92,h:L,y:L/2}] }; } },
+  { id:'bushing', name:'Buje / separador', norma:'A medida', tags:'buje separador espaciador tubo casquillo',
+    fields:[['D','Diámetro exterior',null,20,'mm'],['d','Diámetro interior',null,10.5,'mm'],['L','Largo',null,25,'mm']],
+    build:({D,d,L}) => { D = Math.max(+D,1); d = Math.min(Math.max(+d,0),D - 0.5); L = Math.max(+L,0.5);
+      return { desc:`Ø${D} × Ø${d} × ${L}`, comps:[d > 0 ? {k:'ring',D,di:d,h:L,y:L/2} : {k:'cyl',D,h:L,y:L/2}] }; } },
+  { id:'bearing', name:'Rodamiento rígido de bolas', norma:'Serie 62xx', tags:'rodamiento ruleman bolilla 6204 6205 62',
+    fields:[['c','Designación',Object.keys(T_62),'6204']],
+    build:({c}) => { const [d,D,B,kg] = T_62[c], w = (D - d)/2;
+      return { desc:`${c} (${d}×${D}×${B})`, massKg:kg, comps:[
+        {k:'ring',D,di:D - w*0.6,h:B,y:B/2},
+        {k:'ring',D:d + w*0.6,di:d,h:B,y:B/2},
+        {k:'ring',D:D - w*0.6,di:d + w*0.6,h:B*0.86,y:B/2,tint:0x2c3e50,vol:0}] }; } },
+];
+const MATS = [['acero','Acero',7.85],['inox','Acero inoxidable',7.95],['laton','Latón',8.5],['bronce','Bronce',8.8],['alu','Aluminio',2.7],['nylon','Nylon / plástico',1.14],['fund','Fundición gris',7.2]];
+const FIN = [['zinc','Zincado',0xa9b3bd],['amar','Bicromatado',0xd4b24c],['pav','Pavonado',0x34383c],['galv','Galvanizado',0x9aa3a9],['inox','Inoxidable',0xc4cacf],['bronce','Bronce',0xb4813f],['verde','Pintado verde',0x2f7d4f]];
+// [nombre, largo, ancho, alto (mm interiores), carga máx. kg, tipo, tara kg de referencia]
+const BOXES = [
+  ['Caja de minutería chica', 200, 150, 100, 10, 'carton', 0.15],
+  ['Caja de minutería', 300, 200, 150, 15, 'carton', 0.3],
+  ['Caja de cartón mediana', 400, 300, 200, 20, 'carton', 0.55],
+  ['Caja de cartón grande', 600, 400, 300, 30, 'carton', 1.1],
+  ['Cajón plástico apilable', 560, 360, 260, 40, 'plastico', 2.2],
+  ['Cajón de madera', 800, 600, 500, 250, 'madera', 22],
+  ['Cajón de madera tipo pallet', 1150, 750, 600, 600, 'madera', 38],
+];
+// espesor de pared (cm), fricción, kg por m² de superficie (para estimar la tara)
+const BOX_TYPES = {
+  carton:   { name: 'Cartón corrugado', th: 0.5, fric: 0.45, kgm2: 0.7, edge: 0x7d5a35 },
+  madera:   { name: 'Madera', th: 1.8, fric: 0.5, kgm2: 8.6, edge: 0x5e3f1e },
+  plastico: { name: 'Plástico', th: 0.4, fric: 0.3, kgm2: 3.2, edge: 0x2c4a69 },
+};
+
+// ═════════════════════ ESTADO ═════════════════════
+let step = 0, source = 'cat', famId = 'hexbolt', famVals = {}, finish = 'zinc', customColor = '#3d6fb0';
+let boxIdx = 1, mode = 'ord', prio = 'qty', view = 'part', boxType = 'carton', tareSrc = 'cat', handling = 'man';
+let part = null, importRaw = null, result = null, viewAlt = null, phys = null, done = [false,false,false,false];
+
+// ═════════════════════ THREE ═════════════════════
+const c3d = $('c3d');
+const renderer = new THREE.WebGLRenderer({ canvas: c3d, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe4e8ec);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 5000);
+scene.add(new THREE.HemisphereLight(0xf4f7fa, 0x5d6670, 0.5));
+const dl = new THREE.DirectionalLight(0xffffff, 0.85); dl.position.set(4, 7, 5); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xc9d8e8, 0.3); dl2.position.set(-5, 3, -4); scene.add(dl2);
+const grid = new THREE.GridHelper(200, 40, 0xbac2ca, 0xd3d9df); scene.add(grid);
+const gPart = new THREE.Group(), gPack = new THREE.Group(), gPhys = new THREE.Group();
+scene.add(gPart, gPack, gPhys);
+const orbit = { th: 0.8, ph: 0.5, r: 30, t: new THREE.Vector3() };
+let drag = 0, lx = 0, ly = 0;
+c3d.addEventListener('contextmenu', e => e.preventDefault());
+c3d.addEventListener('mousedown', e => { drag = e.button === 2 || e.shiftKey ? 2 : 1; lx = e.clientX; ly = e.clientY; });
+window.addEventListener('mouseup', () => drag = 0);
+window.addEventListener('mousemove', e => {
+  if (!drag) return; const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
+  if (drag === 1) { orbit.th -= dx*0.006; orbit.ph = Math.max(-0.15, Math.min(1.5, orbit.ph + dy*0.006)); }
+  else { const k = orbit.r*0.0016, rt = new THREE.Vector3(Math.cos(orbit.th), 0, -Math.sin(orbit.th)); orbit.t.addScaledVector(rt, -dx*k); orbit.t.y += dy*k; }
+});
+c3d.addEventListener('wheel', e => { e.preventDefault(); orbit.r = Math.max(0.2, Math.min(4000, orbit.r*(e.deltaY > 0 ? 1.1 : 0.9))); }, { passive: false });
+function frame(size, center) { orbit.r = (size.length()/2 || 5)/Math.sin(camera.fov*Math.PI/360)*1.05; orbit.t.copy(center); }
+function resize() { const w = $('vp').clientWidth, h = $('vp').clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix(); }
+window.addEventListener('resize', resize);
+
+// ═════════════════════ GEOMETRÍA ═════════════════════
+const AX = { x:new THREE.Vector3(1,0,0), y:new THREE.Vector3(0,1,0), z:new THREE.Vector3(0,0,1) };
+const Q_CYL = new THREE.Quaternion().setFromAxisAngle(AX.x, -Math.PI/2);
+function primCyl(rt, rb, h, segs, extra) { return { kind:'cyl', rt:Math.max(rt,0.01), rb:Math.max(rb,0.01), h, segs, off:new THREE.Vector3(), quat: extra ? extra.clone().multiply(Q_CYL) : Q_CYL.clone() }; }
+function primBox(hx, hy, hz, off) { return { kind:'box', he:[hx,hy,hz], off: off || new THREE.Vector3(), quat:new THREE.Quaternion() }; }
+function hexShape(R) { const s = new THREE.Shape(); for (let i = 0; i < 6; i++) { const a = i/6*Math.PI*2 + Math.PI/6, x = Math.cos(a)*R, y = Math.sin(a)*R; i ? s.lineTo(x,y) : s.moveTo(x,y); } s.closePath(); return s; }
+function annulus(R, r, h, seg = 48) { const p = [[r,-h/2],[R,-h/2],[R,-h/2],[R,h/2],[R,h/2],[r,h/2],[r,h/2],[r,-h/2]].map(([a,b]) => new THREE.Vector2(a,b)); return new THREE.LatheGeometry(p, seg); }
+// comp en cm
+function compGeo(c) {
+  if (c.k === 'cyl') return new THREE.CylinderGeometry(c.D/2, c.D/2, c.h, 40);
+  if (c.k === 'ring') return c.di > 0.001 ? annulus(c.D/2, c.di/2, c.h) : new THREE.CylinderGeometry(c.D/2, c.D/2, c.h, 48);
+  if (c.k === 'hex' || c.k === 'hexnut') {
+    const s = hexShape(c.e/2);
+    if (c.k === 'hexnut') { const hole = new THREE.Path(); hole.absarc(0, 0, c.di/2, 0, Math.PI*2, true); s.holes.push(hole); }
+    const g = new THREE.ExtrudeGeometry(s, { depth: c.h, bevelEnabled: true, bevelThickness: c.h*0.05, bevelSize: c.e*0.025, bevelSegments: 1, curveSegments: 32 });
+    g.rotateX(-Math.PI/2); g.computeBoundingBox(); const bb = g.boundingBox; g.translate(0, -(bb.min.y + bb.max.y)/2, 0); return g;
+  }
+}
+function compVol(c) {
+  if (c.vol !== undefined) return c.vol;
+  const hexA = e => 3*Math.sqrt(3)/2*(e/2)**2;
+  if (c.k === 'cyl') return Math.PI*(c.D/2)**2*c.h;
+  if (c.k === 'ring') return Math.PI*((c.D/2)**2 - (c.di/2)**2)*c.h;
+  if (c.k === 'hex') return hexA(c.e)*c.h;
+  if (c.k === 'hexnut') return (hexA(c.e) - Math.PI*(c.di/2)**2)*c.h;
+}
+function compPrim(c) {
+  if (c.k === 'hex' || c.k === 'hexnut') return primCyl(c.e/2, c.e/2, c.h, 6, new THREE.Quaternion().setFromAxisAngle(AX.y, Math.PI/6));
+  return primCyl(c.D/2, c.D/2, c.h, c.k === 'ring' ? 12 : 10);
+}
+function buildCatalogPart() {
+  const f = FAM.find(x => x.id === famId), v = famVals[famId];
+  const r = f.build(v);
+  const comps = r.comps.map(c => { const o = { ...c }; ['D','di','e','h','y'].forEach(k => { if (o[k] !== undefined) o[k] /= 10; }); if (o.vol !== undefined) o.vol /= 1000; return o; });
+  const meshes = [], prims = []; let vol = 0;
+  comps.forEach(c => {
+    meshes.push({ geo: compGeo(c), matrix: new THREE.Matrix4().makeTranslation(0, c.y, 0), tint: c.tint });
+    vol += compVol(c);
+    if (c.tint === undefined || c.vol !== 0) { const p = compPrim(c); p.off.set(0, c.y, 0); prims.push(p); }
+  });
+  const p = finalize(meshes, prims, vol);
+  p.src = 'cat'; p.name = f.name; p.norma = f.norma; p.desc = r.desc; p.famId = f.id;
+  p.round = { axis: 'y', D: Math.max(p.size.x, p.size.z), Lr: p.size.y };
+  if (r.headed) {
+    const h = r.headed; p.headed = { rH: h.rH/10, rS: h.rS/10, k: h.k/10 };
+  }
+  p.catalogKg = r.massKg || null;
+  return p;
+}
+function finalize(meshes, prims, vol) {
+  const box = new THREE.Box3();
+  meshes.forEach(m => { m.geo.computeBoundingBox(); box.union(m.geo.boundingBox.clone().applyMatrix4(m.matrix)); });
+  const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const sh = new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z);
+  meshes.forEach(m => m.matrix.premultiply(sh)); prims.forEach(p => p.off.sub(c));
+  return { meshes, prims, size, vol, boundR: size.length()/2, round: null, headed: null };
+}
+
+// ═════════════════════ IMPORTACIÓN DE ARCHIVOS ═════════════════════
+const LIBS = { obj:'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js', gltf:'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
+  occt:'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js', occtDir:'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/' };
+let occtP = null;
+function loadScript(u) { return new Promise((res, rej) => { if (document.querySelector(`script[src="${u}"]`)) return res(); const s = document.createElement('script'); s.src = u; s.onload = res; s.onerror = () => rej(new Error('No se pudo descargar el lector. Revisá la conexión a internet.')); document.head.appendChild(s); }); }
+function getOcct() { if (!occtP) occtP = loadScript(LIBS.occt).then(() => occtimportjs({ locateFile: f => LIBS.occtDir + f })).catch(e => { occtP = null; throw e; }); return occtP; }
+function impMsg(html, cls = 'info') { $('impMsg').innerHTML = html; $('impMsg').className = 'msg ' + cls; }
+function concatF32(parts) { let n = 0; parts.forEach(p => n += p.length); const o = new Float32Array(n); let k = 0; parts.forEach(p => { o.set(p, k); k += p.length; }); return o; }
+function parseSTL(buf) {
+  const dv = new DataView(buf);
+  if (buf.byteLength >= 84) { const n = dv.getUint32(80, true); if (84 + n*50 === buf.byteLength) { const o = new Float32Array(n*9); for (let i = 0; i < n; i++) for (let k = 0; k < 9; k++) o[i*9 + k] = dv.getFloat32(84 + i*50 + 12 + k*4, true); return o; } }
+  const t = new TextDecoder().decode(buf), re = /vertex\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)/g, a = []; let m;
+  while ((m = re.exec(t))) a.push(+m[1], +m[2], +m[3]); return new Float32Array(a);
+}
+function parseDXF(txt) {
+  const L = txt.split(/\r?\n/).map(x => x.trim()), out = [];
+  for (let i = 0; i + 1 < L.length; i += 2) {
+    if (L[i] !== '0' || L[i+1] !== '3DFACE') continue;
+    const v = {}; let j = i + 2; for (; j + 1 < L.length && L[j] !== '0'; j += 2) v[L[j]] = +L[j+1];
+    const P = k => [v['1'+k] || 0, v['2'+k] || 0, v['3'+k] || 0], a = P(0), b = P(1), c = P(2), d = P(3);
+    out.push(...a, ...b, ...c); if (Math.hypot(d[0]-c[0], d[1]-c[1], d[2]-c[2]) > 1e-9) out.push(...a, ...c, ...d); i = j - 2;
+  }
+  if (!out.length) throw new Error('El DXF no trae caras 3D. Si es un plano 2D (vistas y cotas) no hay sólido para simular: exportá la pieza en 3D como STEP o STL.');
+  return new Float32Array(out);
+}
+function collectPos(root) { root.updateMatrixWorld(true); const p = []; root.traverse(c => { if (!c.isMesh || !c.geometry.attributes.position) return; const g = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone(); g.applyMatrix4(c.matrixWorld); p.push(g.attributes.position.array); }); return concatF32(p); }
+function occtPos(r) { const p = []; r.meshes.forEach(m => { const P = m.attributes.position.array, I = m.index ? m.index.array : null, n = I ? I.length : P.length/3, o = new Float32Array(n*3); for (let i = 0; i < n; i++) { const v = I ? I[i] : i; o[i*3] = P[v*3]; o[i*3+1] = P[v*3+1]; o[i*3+2] = P[v*3+2]; } p.push(o); }); return concatF32(p); }
+async function onFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  impMsg(`Leyendo <b>${file.name}</b>…`);
+  try {
+    if (ext === 'dwg') throw new Error('Los DWG se convierten en el servidor (en la versión final). Esta maqueta corre solo en el navegador: exportá la pieza como STEP, STL o DXF 3D para probarla.');
+    const buf = await file.arrayBuffer(); let pos, step = false;
+    if (ext === 'stl') pos = parseSTL(buf);
+    else if (ext === 'dxf') pos = parseDXF(new TextDecoder().decode(buf));
+    else if (ext === 'obj') { await loadScript(LIBS.obj); pos = collectPos(new THREE.OBJLoader().parse(new TextDecoder().decode(buf))); }
+    else if (ext === 'glb') { await loadScript(LIBS.gltf); const g = await new Promise((r, j) => new THREE.GLTFLoader().parse(buf, '', r, j)); pos = collectPos(g.scene); }
+    else if (['step','stp','iges','igs'].includes(ext)) {
+      if (!occtP) impMsg('Descargando el lector STEP (unos 8 MB, solo la primera vez)…');
+      const oc = await getOcct(); impMsg(`Triangulando <b>${file.name}</b>…`); await new Promise(r => setTimeout(r, 30));
+      const r = oc[ext.startsWith('i') ? 'ReadIgesFile' : 'ReadStepFile'](new Uint8Array(buf), { linearUnit:'millimeter', linearDeflectionType:'bounding_box_ratio', linearDeflection:0.002, angularDeflection:0.5 });
+      if (!r.success) throw new Error('No se pudo leer el archivo ' + ext.toUpperCase() + '.');
+      pos = occtPos(r); step = true; $('impUnit').value = '0.1';
+    } else throw new Error('Formato no soportado (.' + ext + ').');
+    if (!pos || pos.length < 9) throw new Error('El archivo no tiene superficies 3D.');
+    importRaw = { pos, name: file.name, tris: pos.length/9, step };
+    if (!$('impName').value) $('impName').value = file.name.replace(/\.[^.]+$/, '');
+    rebuildImport();
+  } catch (e) { console.error(e); impMsg(e.message || String(e), 'bad'); }
+}
+function rebuildImport() {
+  if (!importRaw || source !== 'file') return;
+  impMsg('Analizando la forma…');
+  setTimeout(() => {
+    const f = +$('impUnit').value || 0.1, src = importRaw.pos, pos = new Float32Array(src.length);
+    for (let i = 0; i < src.length; i++) pos[i] = src[i]*f;
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.computeVertexNormals();
+    const vx = voxelize(pos, 22);
+    const prims = vx.boxes.map(b => primBox(b.h[0], b.h[1], b.h[2], new THREE.Vector3(...b.c)));
+    const p = finalize([{ geo, matrix: new THREE.Matrix4() }], prims, vx.vol);
+    p.src = 'file'; p.fileName = importRaw.name; p.name = $('impName').value || importRaw.name; p.norma = importRaw.name; p.desc = `${fmt(importRaw.tris)} triángulos · ${prims.length} cajas de colisión`;
+    if (importRaw.tris > 20000) p.proxy = boxesGeo(p.prims);
+    setPart(p);
+    const s = p.size;
+    impMsg(`Pieza leída: <b>${fmt(s.x*10,1)} × ${fmt(s.z*10,1)} × ${fmt(s.y*10,1)} mm</b>. ` + (importRaw.step ? 'Unidades tomadas del STEP.' : 'Si las medidas no son las reales, cambiá las unidades.'), 'ok');
+  }, 20);
+}
+function voxelize(pos, maxBoxes) {
+  const mn = [1e9,1e9,1e9], mx = [-1e9,-1e9,-1e9];
+  for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], pos[i+k]); mx[k] = Math.max(mx[k], pos[i+k]); }
+  const size = [0,1,2].map(k => Math.max(mx[k] - mn[k], 1e-4)), bv = size[0]*size[1]*size[2];
+  let N = Math.round(Math.sqrt(maxBoxes)*2.6), res;
+  for (let t = 0; t < 8; t++) { res = voxGrid(pos, mn, size, N); res.boxes = mergeBoxes(res, mn, mx); if (res.boxes.length <= maxBoxes || N <= 2) break; N = Math.max(2, Math.floor(N*0.8)); }
+  let sv = 0;
+  for (let i = 0; i < pos.length; i += 9) { const [ax,ay,az,bx,by,bz,cx,cy,cz] = pos.subarray(i, i+9); sv += ax*(by*cz - bz*cy) - ay*(bx*cz - bz*cx) + az*(bx*cy - by*cx); }
+  sv = Math.abs(sv)/6;
+  return { boxes: res.boxes, vol: sv > 0 && sv <= bv*1.01 ? sv : Math.min(bv, res.filled*res.h**3) };
+}
+function voxGrid(pos, mn, size, N) {
+  const h = Math.max(...size)/N, n = size.map(s => Math.max(1, Math.ceil(s/h - 1e-6))), [nx,ny,nz] = n, occ = new Uint8Array(nx*ny*nz), id = (x,y,z) => x + nx*(y + ny*z);
+  const cl = (v, k) => Math.min(n[k] - 1, Math.max(0, Math.floor((v - mn[k])/h))), T = pos.length/9, cols = Array.from({ length: ny*nz }, () => []);
+  for (let t = 0; t < T; t++) {
+    const o = t*9, a = [pos[o],pos[o+1],pos[o+2]], b = [pos[o+3],pos[o+4],pos[o+5]], c = [pos[o+6],pos[o+7],pos[o+8]];
+    const e = Math.max(Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2]), Math.hypot(c[0]-a[0],c[1]-a[1],c[2]-a[2]), Math.hypot(c[0]-b[0],c[1]-b[1],c[2]-b[2]));
+    const m = Math.min(80, Math.max(1, Math.ceil(e/(h*0.45))));
+    for (let i = 0; i <= m; i++) for (let j = 0; j <= m - i; j++) { const u = i/m, w = j/m; occ[id(cl(a[0]+(b[0]-a[0])*u+(c[0]-a[0])*w,0), cl(a[1]+(b[1]-a[1])*u+(c[1]-a[1])*w,1), cl(a[2]+(b[2]-a[2])*u+(c[2]-a[2])*w,2))] = 1; }
+    const y0 = Math.max(0, Math.ceil((Math.min(a[1],b[1],c[1]) - mn[1])/h - 0.5)), y1 = Math.min(ny-1, Math.floor((Math.max(a[1],b[1],c[1]) - mn[1])/h - 0.5));
+    const z0 = Math.max(0, Math.ceil((Math.min(a[2],b[2],c[2]) - mn[2])/h - 0.5)), z1 = Math.min(nz-1, Math.floor((Math.max(a[2],b[2],c[2]) - mn[2])/h - 0.5));
+    for (let z = z0; z <= z1; z++) for (let y = y0; y <= y1; y++) cols[y + ny*z].push(t);
+  }
+  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) {
+    const list = cols[y + ny*z]; if (list.length < 2) continue;
+    const py = mn[1] + (y + 0.5)*h + h*1.3e-4, pz = mn[2] + (z + 0.5)*h + h*0.7e-4, xs = [];
+    for (const t of list) { const o = t*9, ay = pos[o+1], az = pos[o+2], by = pos[o+4], bz = pos[o+5], cy = pos[o+7], cz = pos[o+8];
+      const d = (by-ay)*(cz-az) - (cy-ay)*(bz-az); if (Math.abs(d) < 1e-12) continue;
+      const l1 = ((py-ay)*(cz-az) - (cy-ay)*(pz-az))/d, l2 = ((by-ay)*(pz-az) - (py-ay)*(bz-az))/d;
+      if (l1 < 0 || l2 < 0 || l1 + l2 > 1) continue; xs.push(pos[o] + (pos[o+3]-pos[o])*l1 + (pos[o+6]-pos[o])*l2); }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) { const i0 = Math.max(0, Math.ceil((xs[k]-mn[0])/h - 0.5)), i1 = Math.min(nx-1, Math.floor((xs[k+1]-mn[0])/h - 0.5)); for (let x = i0; x <= i1; x++) occ[id(x,y,z)] = 1; }
+  }
+  let filled = 0; for (let i = 0; i < occ.length; i++) filled += occ[i];
+  return { occ, n, h, filled };
+}
+function mergeBoxes(g, mn, mx) {
+  const [nx,ny,nz] = g.n, occ = g.occ.slice(), id = (x,y,z) => x + nx*(y + ny*z), out = [];
+  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    if (!occ[id(x,y,z)]) continue;
+    let x1 = x; while (x1+1 < nx && occ[id(x1+1,y,z)]) x1++;
+    let y1 = y; gy: while (y1+1 < ny) { for (let i = x; i <= x1; i++) if (!occ[id(i,y1+1,z)]) break gy; y1++; }
+    let z1 = z; gz: while (z1+1 < nz) { for (let j = y; j <= y1; j++) for (let i = x; i <= x1; i++) if (!occ[id(i,j,z1+1)]) break gz; z1++; }
+    for (let k = z; k <= z1; k++) for (let j = y; j <= y1; j++) for (let i = x; i <= x1; i++) occ[id(i,j,k)] = 0;
+    const lo = [x,y,z], hi = [x1+1,y1+1,z1+1], a = [0,1,2].map(k => mn[k] + lo[k]*g.h), b = [0,1,2].map(k => Math.min(mx[k], mn[k] + hi[k]*g.h));
+    out.push({ c: [0,1,2].map(k => (a[k] + b[k])/2), h: [0,1,2].map(k => Math.max(0.005, (b[k] - a[k])/2)) });
+  }
+  return out;
+}
+function boxesGeo(prims) { const P = [], N = []; prims.forEach(p => { const g = new THREE.BoxGeometry(p.he[0]*2, p.he[1]*2, p.he[2]*2).toNonIndexed(); g.translate(p.off.x, p.off.y, p.off.z); P.push(g.attributes.position.array); N.push(g.attributes.normal.array); }); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(concatF32(P), 3)); g.setAttribute('normal', new THREE.BufferAttribute(concatF32(N), 3)); return g; }
+
+// ═════════════════════ PIEZA: UI ═════════════════════
+function famMatches(f, q) { q = q.trim().toLowerCase(); if (!q) return true; return (f.name + ' ' + f.norma + ' ' + f.tags + ' ' + (f.id === 'bearing' ? Object.keys(T_62).join(' ') : '')).toLowerCase().includes(q); }
+function renderFams() {
+  const q = $('q').value, list = FAM.filter(f => famMatches(f, q));
+  $('fams').innerHTML = list.length ? list.map(f => `<button class="fam${f.id === famId ? ' on' : ''}" onclick="pickFam('${f.id}')"><svg width="24" height="24" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.4">${ICON[f.id]}</svg><span>${f.name}</span></button>`).join('')
+    : '<div class="why" style="grid-column:1/-1">Sin resultados. Si la pieza no está en el catálogo, subí el archivo 3D.</div>';
+}
+function pickFam(id) {
+  famId = id; renderFams(); renderFamFields();
+  const f = FAM.find(x => x.id === id);
+  if (id === 'bearing') { $('mat').value = 'acero'; if (finish !== 'custom') finish = 'inox'; }
+  if (id === 'locknut' || id === 'grower' || id === 'washer' || id === 'nut' || id === 'hexbolt' || id === 'allen' || id === 'rod') { if (finish === 'inox' && $('mat').value === 'acero') finish = 'zinc'; }
+  renderSwatches(); applyCatalog();
+}
+function renderFamFields() {
+  const f = FAM.find(x => x.id === famId);
+  if (!famVals[famId]) { famVals[famId] = {}; f.fields.forEach(([k,,,def]) => famVals[famId][k] = def); }
+  const v = famVals[famId];
+  $('famNorma').textContent = f.norma;
+  $('famFields').innerHTML = f.fields.map(([k, lbl, opts, , u]) => opts
+    ? `<div class="row"><label for="ff_${k}">${lbl}</label><select id="ff_${k}" onchange="famField('${k}', this.value)">${opts.map(o => `<option${String(o) === String(v[k]) ? ' selected' : ''}>${o}</option>`).join('')}</select><span class="u">${u || ''}</span></div>`
+    : `<div class="row"><label for="ff_${k}">${lbl}</label><input type="number" id="ff_${k}" value="${v[k]}" min="0" step="0.5" oninput="famField('${k}', this.value)"><span class="u">${u || ''}</span></div>`).join('');
+}
+let famT = null;
+function famField(k, val) { famVals[famId][k] = isNaN(+val) ? val : +val; clearTimeout(famT); famT = setTimeout(applyCatalog, 150); }
+function applyCatalog() { if (source !== 'cat') return; setPart(buildCatalogPart()); }
+function setSource(s) {
+  source = s; $('src-cat').className = s === 'cat' ? 'on' : ''; $('src-file').className = s === 'file' ? 'on' : '';
+  $('srcCat').hidden = s !== 'cat'; $('srcFile').hidden = s !== 'file';
+  if (s === 'cat') applyCatalog(); else if (importRaw) rebuildImport(); else { setPart(null); }
+}
+function renderSwatches() {
+  $('sws').innerHTML = FIN.map(([id, n, c]) => `<button class="sw${finish === id ? ' on' : ''}" onclick="setFinish('${id}')"><i style="background:#${c.toString(16).padStart(6,'0')}"></i>${n}</button>`).join('') +
+    `<label class="sw${finish === 'custom' ? ' on' : ''}" title="Color personalizado"><input type="color" value="${customColor}" oninput="customColor=this.value;setFinish('custom')" aria-label="Color personalizado">Otro</label>`;
+}
+function setFinish(id) { finish = id; renderSwatches(); applyColor(); }
+function partColor() { return finish === 'custom' ? parseInt(customColor.slice(1), 16) : FIN.find(f => f[0] === finish)[2]; }
+function density() { return MATS.find(m => m[0] === $('mat').value)[2]; }
+function updateMass() {
+  if (!part) return;
+  const real = source === 'file' ? +$('impKg').value : 0;
+  part.massKg = real > 0 ? real : part.catalogKg || part.vol*density()/1000;
+  part.massSrc = real > 0 ? 'cargado' : part.catalogKg ? 'catálogo' : 'material × volumen';
+  renderPartCard(); invalidate();
+}
+function setPart(p) {
+  stopPhys(); clearG(gPhys); phys = null; $('hud').hidden = true;
+  $('physTxt').innerHTML = 'Simula gravedad, fricción y vibración de transporte con la masa real de cada pieza.';
+  part = p; if (p) { p.massKg = 0; } updateMass(); drawPart(); invalidate(); renderPartCard();
+  $('empty3d').hidden = !!p;
+  if (view !== 'part') setView('part'); else fitView();
+}
+function invalidate() { result = null; viewAlt = null; clearG(gPack); renderResult(); if (step === 3) compute(); }
+
+// ═════════════════════ MATERIALES Y DIBUJO ═════════════════════
+const matCache = new Map();
+function metalMat(hex) {
+  if (!matCache.has(hex)) {
+    const c = new THREE.Color(hex), lum = c.r*0.3 + c.g*0.59 + c.b*0.11;
+    matCache.set(hex, new THREE.MeshPhongMaterial({ color: hex, shininess: lum > 0.5 ? 70 : 35, specular: new THREE.Color(lum > 0.5 ? 0x777777 : 0x333333), flatShading: false }));
+  }
+  return matCache.get(hex);
+}
+function clearG(g) { while (g.children.length) { const c = g.children.pop(); c.traverse(o => { if (o.userData.own && o.geometry) o.geometry.dispose(); if (o.userData.own && o.material && o.material.map) o.material.map.dispose(); }); } }
+function drawPart() {
+  clearG(gPart); if (!part) { $('dimTag').innerHTML = ''; return; }
+  const col = partColor();
+  part.meshes.forEach(m => { const mesh = new THREE.Mesh(m.geo, metalMat(m.tint !== undefined ? m.tint : col)); mesh.matrixAutoUpdate = false; mesh.matrix.copy(m.matrix); gPart.add(mesh); });
+  const s = part.size;
+  const bh = new THREE.Box3Helper(new THREE.Box3(s.clone().multiplyScalar(-.5), s.clone().multiplyScalar(.5)), 0x1f5f9e); bh.material.transparent = true; bh.material.opacity = .35; gPart.add(bh);
+  gPart.position.set(0, s.y/2, 0);
+  grid.scale.setScalar(Math.max(0.05, s.length()/60));
+  $('dimTag').innerHTML = `Envolvente <b>${fmt(s.x*10,1)} × ${fmt(s.z*10,1)} × ${fmt(s.y*10,1)}</b> mm`;
+}
+function applyColor() { drawPart(); drawPack(); if (phys) phys.bodies.forEach(b => b.vis.children.forEach(m => { if (!m.userData.tint) m.material = metalMat(partColor()); })); renderPartCard(); }
+function renderPartCard() {
+  if (!part) { $('pName').textContent = '—'; $('pDesc').textContent = ''; $('pKv').innerHTML = ''; return; }
+  const s = part.size, bv = s.x*s.y*s.z, colHex = '#' + partColor().toString(16).padStart(6, '0');
+  const finName = finish === 'custom' ? 'Personalizado' : FIN.find(f => f[0] === finish)[1];
+  $('pName').textContent = part.src === 'cat' ? `${part.name} ${part.desc}` : part.name;
+  $('pDesc').textContent = part.src === 'cat' ? part.norma : part.desc;
+  const kg = part.massKg;
+  $('pKv').innerHTML = `
+    <dt>Envolvente</dt><dd>${fmt(s.x*10,1)} × ${fmt(s.z*10,1)} × ${fmt(s.y*10,1)} mm</dd>
+    <dt>Volumen real</dt><dd>${fmt(part.vol, part.vol < 10 ? 2 : 1)} cm³</dd>
+    <dt>Volumen envolvente</dt><dd>${fmt(bv, bv < 10 ? 2 : 1)} cm³</dd>
+    <dt>Peso unitario</dt><dd>${kg < 1 ? fmt(kg*1000, 1) + ' g' : fmt(kg, 3) + ' kg'}</dd>
+    <dt style="font-size:11px;color:var(--ink3)">origen del peso</dt><dd style="font-size:11px;color:var(--ink3);font-family:var(--f-ui)">${part.massSrc}</dd>
+    <dt>Material</dt><dd style="font-family:var(--f-ui)">${MATS.find(m => m[0] === $('mat').value)[1]}</dd>
+    <dt>Terminación</dt><dd style="font-family:var(--f-ui)"><span class="swatch" style="background:${colHex}"></span>${finName}</dd>`;
+}
+
+// ═════════════════════ EMBALAJE ═════════════════════
+const BOX_ICON = {
+  carton: '<path d="M3 8l10-4 10 4v11l-10 4-10-4z"/><path d="M3 8l10 4 10-4M13 12v11"/><path d="M3 8l-1.5-3.5L11 1M23 8l1.5-3.5L15 1"/>',
+  madera: '<path d="M3 8l10-4 10 4v11l-10 4-10-4z"/><path d="M3 8l10 4 10-4M13 12v11M3 13.5l10 4 10-4"/><path d="M5 22.5v1.5M13 25.5V24M21 22.5v1.5"/>',
+  plastico: '<path d="M3 8l10-4 10 4v11l-10 4-10-4z"/><path d="M3 8l10 4 10-4M13 12v11"/><path d="M6 13l4 1.6M16 14.6l4-1.6"/>',
+};
+function renderBoxes() {
+  $('boxList').innerHTML = BOXES.map(([n, L, W, H, kg, t, tara], i) => `<button class="boxopt${i === boxIdx ? ' on' : ''}" onclick="pickBox(${i})">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.4">${BOX_ICON[t]}</svg>
+    <div><div class="t">${n}</div><div class="d">${L} × ${W} × ${H} mm · máx. ${kg} kg · tara ${fmt(tara, tara < 1 ? 2 : 0)} kg</div></div></button>`).join('') +
+    `<button class="boxopt${boxIdx === -1 ? ' on' : ''}" onclick="pickBox(-1)"><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 2"><path d="M3 8l10-4 10 4v11l-10 4-10-4z"/></svg><div><div class="t">A medida</div><div class="d">Cargá las medidas abajo</div></div></button>`;
+}
+function pickBox(i) {
+  boxIdx = i;
+  if (i >= 0) {
+    const [, L, W, H, kg, t, tara] = BOXES[i];
+    $('bL').value = L; $('bW').value = W; $('bH').value = H; $('bKg').value = kg; $('bTare').value = tara; tareSrc = 'cat';
+    setBoxType(t, true);
+    setHandling(t === 'madera' ? 'fork' : 'man');
+  }
+  renderBoxes(); renderBoxCard(); invalidate();
+}
+function boxCustom() { boxIdx = -1; if (tareSrc !== 'man') { $('bTare').value = estimateTare(); tareSrc = 'est'; } renderBoxes(); renderBoxCard(); invalidate(); }
+function setBoxType(t, silent) {
+  boxType = t; ['carton','madera','plastico'].forEach(k => $('bt-' + k).className = k === t ? 'on' : '');
+  if (silent) return;
+  if (boxIdx >= 0 && BOXES[boxIdx][5] !== t) { boxIdx = -1; renderBoxes(); }
+  if (tareSrc !== 'man') { $('bTare').value = estimateTare(); tareSrc = 'est'; }
+  renderBoxCard(); weightsChanged(); redrawBoxes();
+}
+// tara estimada por superficie del embalaje × peso por m² del material
+function estimateTare() {
+  const b = boxDims(), T = BOX_TYPES[boxType], th = T.th;
+  const L = (b.L + 2*th)/100, W = (b.W + 2*th)/100, H = (b.H + th)/100;
+  let area = 2*(L*W + L*H + W*H);
+  if (boxType === 'plastico') area -= L*W;           // sin tapa
+  let kg = area*T.kgm2;
+  if (boxType === 'madera') kg *= 1.12;              // patines y refuerzos
+  return Math.round(kg*20)/20;
+}
+function weightsChanged() { renderBoxCard(); renderResult(); drawPack(); }
+function setHandling(h) {
+  handling = h; $('mh-man').className = h === 'man' ? 'on' : ''; $('mh-fork').className = h === 'fork' ? 'on' : '';
+  $('manRow').hidden = h !== 'man';
+  $('mhHint').textContent = h === 'man' ? 'El peso máximo manipulable se controla sobre el peso bruto: piezas + embalaje + relleno.' : 'Se mueve con autoelevador o zorra: no se aplica límite manual, solo la carga máxima del embalaje.';
+  renderResult(); drawPack();
+}
+function redrawBoxes() { drawPack(); if (phys) { gPhys.remove(phys.bv); const d = phys.dims, bv = boxVis(d.L, d.W, d.H); bv.scale.setScalar(phys.S); gPhys.add(bv); phys.bv = bv; } }
+function boxDims() { return { L: Math.max(1, +$('bL').value)/10, W: Math.max(1, +$('bW').value)/10, H: Math.max(1, +$('bH').value)/10, kg: Math.max(0, +$('bKg').value) }; }
+function renderBoxCard() {
+  const b = boxDims(), T = BOX_TYPES[boxType], tare = +$('bTare').value || 0, fill = +$('bFill').value || 0;
+  $('eName').textContent = boxIdx >= 0 ? BOXES[boxIdx][0] : 'A medida';
+  $('tareHint').textContent = { cat: 'Tara de referencia del catálogo. Si tenés el peso real, cargalo.', est: `Estimada para ${T.name.toLowerCase()} según la superficie del embalaje. Si tenés el peso real, cargalo.`, man: 'Tara cargada a mano.' }[tareSrc];
+  $('eKv').innerHTML = `<dt>Tipo</dt><dd style="font-family:var(--f-ui)">${T.name}</dd>
+    <dt>Interior</dt><dd>${fmt(b.L*10)} × ${fmt(b.W*10)} × ${fmt(b.H*10)} mm</dd>
+    <dt>Exterior aprox.</dt><dd>${fmt((b.L + 2*T.th)*10)} × ${fmt((b.W + 2*T.th)*10)} × ${fmt((b.H + T.th)*10)} mm</dd>
+    <dt>Volumen útil</dt><dd>${fmt(b.L*b.W*b.H/1000, 1)} L</dd>
+    <dt>Carga máxima</dt><dd>${b.kg ? fmt(b.kg) + ' kg' : '—'}</dd>
+    <dt>Tara</dt><dd>${fmt(tare, 2)} kg</dd>
+    ${fill ? `<dt>Relleno</dt><dd>${fmt(fill, 2)} kg</dd>` : ''}`;
+}
+
+// ═════════════════════ CRITERIOS ═════════════════════
+function setMode(m) {
+  mode = m; $('m-ord').className = m === 'ord' ? 'on' : ''; $('m-bulk').className = m === 'bulk' ? 'on' : '';
+  $('modeHint').textContent = m === 'ord' ? 'Las piezas se acomodan una por una siguiendo un patrón.' : 'Las piezas se vuelcan sin acomodar. El 100% es lo que entra volcando y vibrando la caja.';
+  invalidate();
+}
+function setPrio(p) {
+  prio = p; ['qty','stab','pick'].forEach(k => $('pr-' + k).className = k === p ? 'on' : '');
+  $('prioHint').textContent = { qty: 'Gana el acomodo con más piezas.', stab: 'Entre acomodos con cantidad similar (±5%), gana el que tiene más piezas apoyadas sobre su cara más grande.', pick: 'Entre acomodos con cantidad similar (±5%), gana el que usa menos orientaciones distintas: más fácil de sacar y contar.' }[p];
+  invalidate();
+}
+
+// ═════════════════════ OPTIMIZADOR ORDENADO ═════════════════════
+// marco de empaque: eje 0 = largo (X), 1 = ancho (Z), 2 = alto (Y). Pieza: p = [x, z, y].
+const PERMS = [[0,1,2],[1,0,2],[2,1,0],[0,2,1],[1,2,0],[2,0,1]];
+const P2W = [new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,1), new THREE.Vector3(0,1,0)];
+function permsFor(p, upright) { const seen = new Set(), out = []; PERMS.forEach((pm, i) => { if (upright && pm[2] !== 2) return; const k = pm.map(a => p[a].toFixed(4)).join(); if (seen.has(k)) return; seen.add(k); out.push({ pm, idx: i }); }); return out; }
+function permRot(pm) {
+  const m = [[0,0,0],[0,0,0],[0,0,0]];
+  for (let i = 0; i < 3; i++) { const w = P2W[i].toArray(), q = P2W[pm[i]].toArray(); for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) m[r][c] += w[r]*q[c]; }
+  const det = m[0][0]*(m[1][1]*m[2][2] - m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2] - m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1] - m[1][1]*m[2][0]);
+  if (det < 0) for (let c = 0; c < 3; c++) m[0][c] = -m[0][c];
+  return new THREE.Matrix4().set(m[0][0],m[0][1],m[0][2],0, m[1][0],m[1][1],m[1][2],0, m[2][0],m[2][1],m[2][2],0, 0,0,0,1);
+}
+function emitGrid(org, d, cnt, o, p, out) {
+  const R = permRot(o.pm);
+  for (let i = 0; i < cnt[0]; i++) for (let j = 0; j < cnt[1]; j++) for (let k = 0; k < cnt[2]; k++)
+    out.push({ c: [org[0] + i*d[0] + p[o.pm[0]]/2, org[1] + j*d[1] + p[o.pm[1]]/2, org[2] + k*d[2] + p[o.pm[2]]/2], R, key: 'p' + o.idx, up: o.pm[2] });
+}
+function gridPack(B, p, g, perms) {
+  let best = { n: 0 };
+  perms.forEach(o => { const d = o.pm.map(a => p[a] + g), n = [0,1,2].map(i => Math.floor((B[i] + g + 1e-9)/d[i])), t = n[0]*n[1]*n[2]; if (t > best.n) best = { n: t, o, d, nn: n }; });
+  const pl = []; if (best.n) emitGrid([0,0,0], best.d, best.nn, best.o, p, pl);
+  return { n: best.n, placements: pl, info: best.n ? { grid: best.nn, ori: best.o.pm.map(a => p[a]) } : null };
+}
+function guillotine(B, p, g, perms, budget = 160000) {
+  const D0 = B.map(x => x + g), ds = perms.map(o => ({ ...o, d: o.pm.map(a => p[a] + g) })), minD = Math.min(...p) + g, vd = ds[0].d[0]*ds[0].d[1]*ds[0].d[2];
+  const memo = new Map(); let ev = 0; const key = D => D.map(x => Math.round(x*1000)).join('|');
+  function leaf(D) { let b = { n: 0, t: -1 }; ds.forEach(o => { const n = [0,1,2].map(i => Math.floor((D[i] + 1e-9)/o.d[i])), t = n[0]*n[1]*n[2]; if (t > b.n) b = { n: t, t: -1, o, nn: n }; }); return b; }
+  function rec(D) {
+    if (D[0] < minD - 1e-9 || D[1] < minD - 1e-9 || D[2] < minD - 1e-9) return 0;
+    const k = key(D), m = memo.get(k); if (m) return m.n;
+    let best = leaf(D); const ub = Math.floor((D[0]*D[1]*D[2] + 1e-6)/vd);
+    if (ev < budget && best.n < ub) {
+      out: for (const o of ds) { const n = [0,1,2].map(i => Math.floor((D[i] + 1e-9)/o.d[i])); if (!n[0] || !n[1] || !n[2]) continue;
+        for (let t = 0; t < 3; t++) { const u = (t+1)%3, v = (t+2)%3;
+          for (let kk = n[t]; kk >= Math.max(1, n[t] - 4); kk--) { ev++;
+            const R1 = D.slice(); R1[t] = D[t] - kk*o.d[t]; const R2 = D.slice(); R2[t] = kk*o.d[t]; R2[u] = D[u] - n[u]*o.d[u];
+            const R3 = D.slice(); R3[t] = kk*o.d[t]; R3[u] = n[u]*o.d[u]; R3[v] = D[v] - n[v]*o.d[v];
+            const tot = kk*n[u]*n[v] + rec(R1) + rec(R2) + rec(R3);
+            if (tot > best.n) { best = { n: tot, t, k: kk, o, nn: n }; if (best.n >= ub) break out; } } } }
+    }
+    memo.set(k, best); return best.n;
+  }
+  const n = rec(D0), pl = [];
+  (function real(D, org) {
+    if (D[0] < minD - 1e-9 || D[1] < minD - 1e-9 || D[2] < minD - 1e-9) return;
+    rec(D); const m = memo.get(key(D)); if (!m || !m.n) return;
+    if (m.t < 0) { emitGrid(org, m.o.d, m.nn, m.o, p, pl); return; }
+    const t = m.t, u = (t+1)%3, v = (t+2)%3, d = m.o.d, nn = m.nn, cnt = nn.slice(); cnt[t] = m.k; emitGrid(org, d, cnt, m.o, p, pl);
+    const R1 = D.slice(); R1[t] = D[t] - m.k*d[t]; const o1 = org.slice(); o1[t] += m.k*d[t];
+    const R2 = D.slice(); R2[t] = m.k*d[t]; R2[u] = D[u] - nn[u]*d[u]; const o2 = org.slice(); o2[u] += nn[u]*d[u];
+    const R3 = D.slice(); R3[t] = m.k*d[t]; R3[u] = nn[u]*d[u]; R3[v] = D[v] - nn[v]*d[v]; const o3 = org.slice(); o3[v] += nn[v]*d[v];
+    real(R1, o1); real(R2, o2); real(R3, o3);
+  })(D0, [0,0,0]);
+  return { n, placements: pl };
+}
+// alineación: eje Y de la pieza → eje t de la caja
+function alignRot(t) { if (t === 0) return new THREE.Matrix4().makeRotationZ(-Math.PI/2); if (t === 1) return new THREE.Matrix4().makeRotationX(Math.PI/2); return new THREE.Matrix4(); }
+function hex2D(A, Bv, D, g) {
+  const dd = D + g, h = dd*Math.sqrt(3)/2, opts = [];
+  const na = Math.floor((A + g)/dd), nb = Math.floor((Bv + g)/dd), sq = { n: na*nb, pts: [], kind: 'grilla' };
+  for (let i = 0; i < na; i++) for (let j = 0; j < nb; j++) sq.pts.push([D/2 + i*dd, D/2 + j*dd]);
+  opts.push(sq);
+  [false, true].forEach(sw => { const a = sw ? Bv : A, b = sw ? A : Bv; if (b < D) return;
+    const n1 = Math.floor((a + g)/dd), n2 = Math.floor((a + g - dd/2)/dd), rows = 1 + Math.floor((b - D)/h + 1e-9), pts = [];
+    for (let r = 0; r < rows; r++) { const s = r % 2 === 1, c = s ? n2 : n1; for (let i = 0; i < c; i++) { const x = D/2 + i*dd + (s ? dd/2 : 0), y = D/2 + r*h; pts.push(sw ? [y, x] : [x, y]); } }
+    opts.push({ n: pts.length, pts, kind: 'tresbolillo' }); });
+  return opts.reduce((a, b) => b.n > a.n ? b : a);
+}
+function hexPack(B, P, g, upright) {
+  const D = P.round.D, Lr = P.round.Lr; let best = { n: 0, placements: [] };
+  for (let t = 0; t < 3; t++) {
+    if (upright && t !== 2) continue;
+    const u = (t+1)%3, v = (t+2)%3, nAx = Math.floor((B[t] + g + 1e-9)/(Lr + g)); if (!nAx) continue;
+    const pl2 = hex2D(B[u], B[v], D, g); if (pl2.kind !== 'tresbolillo' || pl2.n*nAx <= best.n) continue;
+    const R = alignRot(t), pl = [];
+    for (let k = 0; k < nAx; k++) pl2.pts.forEach(([a, b]) => { const c = [0,0,0]; c[t] = Lr/2 + k*(Lr + g); c[u] = a; c[v] = b; pl.push({ c, R, key: 'h' + t, up: t === 2 ? 2 : -1 }); });
+    best = { n: pl.length, placements: pl, info: { t, layers: nAx, perLayer: pl2.n } };
+  }
+  return best;
+}
+// cabeza-cola: piezas con cabeza (tornillos) alternadas de forma que la cabeza de una queda al lado del vástago de la vecina
+function headTailPack(B, P, g) {
+  const H = P.headed; if (!H) return { n: 0, placements: [] };
+  const rH = H.rH, rS = H.rS, Lr = P.round.Lr; if (Lr - H.k < H.k) return { n: 0, placements: [] };
+  const c = rH + rS + g, full = 2*rH + g, checkerOK = c*Math.SQRT2 >= 2*rH + g - 1e-9;
+  let best = { n: 0, placements: [] };
+  for (let t = 0; t < 3; t++) {
+    const u = (t+1)%3, v = (t+2)%3, nAx = Math.floor((B[t] + g + 1e-9)/(Lr + g)); if (!nAx) continue;
+    const variants = [];
+    if (checkerOK) variants.push({ du: c, dv: c, flip: (i, j) => (i + j) % 2, name: 'damero' });
+    variants.push({ du: c, dv: full, flip: (i) => i % 2, name: 'filas' }, { du: full, dv: c, flip: (i, j) => j % 2, name: 'filas' });
+    variants.forEach(vr => {
+      const a = B[u] >= 2*rH ? 1 + Math.floor((B[u] - 2*rH + 1e-9)/vr.du) : 0, b = B[v] >= 2*rH ? 1 + Math.floor((B[v] - 2*rH + 1e-9)/vr.dv) : 0, n = nAx*a*b;
+      if (n <= best.n) return;
+      const R0 = alignRot(t), Rf = new THREE.Matrix4().makeRotationAxis(P2W[u], Math.PI).multiply(R0), pl = [];
+      for (let k = 0; k < nAx; k++) for (let i = 0; i < a; i++) for (let j = 0; j < b; j++) {
+        const f = vr.flip(i, j), cc = [0,0,0]; cc[t] = Lr/2 + k*(Lr + g); cc[u] = rH + i*vr.du; cc[v] = rH + j*vr.dv;
+        pl.push({ c: cc, R: f ? Rf : R0, key: 'c' + t + f, up: -1 });
+      }
+      best = { n, placements: pl, info: { t, variant: vr.name, a, b, layers: nAx } };
+    });
+  }
+  return best;
+}
+const AXN = ['a lo largo', 'a lo ancho', 'vertical'];
+function compute() {
+  if (!part) { result = null; renderResult(); return; }
+  const b = boxDims(), B = [b.L, b.W, b.H], g = Math.max(0, +$('gap').value || 0)/10, upright = $('upright').checked;
+  const p = [part.size.x, part.size.z, part.size.y], perms = permsFor(p, upright);
+  const alts = [];
+  const gr = gridPack(B, p, g, perms);
+  alts.push({ id: 'grid', name: 'Grilla simple', sub: 'una sola orientación, filas y columnas', ...gr });
+  const gu = guillotine(B, p, g, perms);
+  alts.push({ id: 'mix', name: 'Bloques mixtos', sub: 'combina orientaciones y rellena huecos', ...gu });
+  if (part.round) { const h = hexPack(B, part, g, upright); if (h.n) alts.push({ id: 'hex', name: 'Tresbolillo', sub: `filas intercaladas, eje ${AXN[h.info.t]}`, ...h }); }
+  if (part.headed && !upright) { const h = headTailPack(B, part, g); if (h.n) alts.push({ id: 'ht', name: 'Cabeza-cola', sub: `${h.info.variant === 'damero' ? 'alternadas en damero' : 'filas alternadas'}, eje ${AXN[h.info.t]}`, ...h }); }
+  alts.forEach(a => {
+    a.oris = new Set(a.placements.map(q => q.key)).size;
+    a.stab = a.placements.length ? a.placements.filter(isFlat).length/a.placements.length : 0;
+  });
+  const bulk = result && result.bulk && result.bulk.key === bulkKey() ? result.bulk : null;
+  result = { alts, B, g, upright, bulk, key: bulkKey() };
+  pickBest(); renderResult(); drawPack();
+}
+// ¿la pieza está apoyada sobre su cara más grande? (su dimensión más corta queda vertical)
+function isFlat(q) {
+  const s = part.size, v = new THREE.Vector3(), dims = [[s.x, new THREE.Vector3(1,0,0)], [s.y, new THREE.Vector3(0,1,0)], [s.z, new THREE.Vector3(0,0,1)]];
+  const minAx = dims.reduce((a, b) => b[0] < a[0] ? b : a)[1];
+  v.copy(minAx).applyMatrix4(q.R); return Math.abs(v.y) > 0.99;
+}
+function pickBest() {
+  const A = result.alts.filter(a => a.n > 0);
+  if (!A.length) { result.best = null; viewAlt = null; return; }
+  const max = Math.max(...A.map(a => a.n));
+  let best = A.reduce((a, b) => b.n > a.n ? b : a);
+  if (prio !== 'qty') {
+    const near = A.filter(a => a.n >= max*0.95);
+    best = near.reduce((a, b) => prio === 'pick' ? (b.oris < a.oris || (b.oris === a.oris && b.n > a.n) ? b : a) : (b.stab > a.stab + 1e-9 || (Math.abs(b.stab - a.stab) < 1e-9 && b.n > a.n) ? b : a));
+  }
+  result.best = best; result.maxOrd = max;
+  if (!viewAlt || !A.find(a => a.id === viewAlt)) viewAlt = best.id;
+}
+function bulkKey() { const b = boxDims(); return part ? [b.L, b.W, b.H, part.size.x, part.size.y, part.size.z, part.prims.length].join('|') : ''; }
+
+// ═════════════════════ RESULTADO ═════════════════════
+function summary() {
+  if (!result || !part) return null;
+  const b = boxDims(), tare = Math.max(0, +$('bTare').value || 0), fill = Math.max(0, +$('bFill').value || 0);
+  const man = handling === 'man' ? Math.max(0, +$('manKg').value || 0) : 0;
+  const caps = [];
+  if (b.kg > 0) caps.push({ kg: b.kg, src: 'carga' });
+  if (man > 0) caps.push({ kg: man - tare - fill, src: 'manip' });   // lo que queda para piezas dentro del peso bruto manipulable
+  const cap = caps.length ? caps.reduce((a, c) => c.kg < a.kg ? c : a) : null;
+  const kgLim = cap ? Math.max(0, cap.kg) : Infinity, limSrc = cap ? cap.src : null;
+  const nW = isFinite(kgLim) ? Math.floor(kgLim/part.massKg + 1e-9) : Infinity;
+  const nMax = mode === 'ord' ? (result.best ? result.best.n : 0) : (result.bulk ? result.bulk.n : null);
+  if (nMax === null) return { pending: true, nW, kgLim };
+  const n = Math.min(nMax, nW), audit = Math.floor(+$('audit').value || 0);
+  const nShown = audit > 0 ? audit : n, wKg = nShown*part.massKg;
+  return { nMax, nW, n, kgLim, limSrc, audit, tare, fill, man, sat: nMax ? nShown/nMax : 0, lim: nW < nMax ? 'peso' : 'geo',
+    wKg, gross: wKg + tare + fill, tareOver: man > 0 && tare + fill >= man, volOcc: nShown*part.vol/(b.L*b.W*b.H) };
+}
+function gaugeSVG(f) {
+  const r = 34, C = 2*Math.PI*r, v = Math.max(0, Math.min(1, f)), col = v >= 0.95 ? '#1e8a5a' : v >= 0.7 ? '#1f5f9e' : '#b26a00';
+  return `<svg width="84" height="84" viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="${r}" fill="none" stroke="#e3e7eb" stroke-width="8"/><circle cx="42" cy="42" r="${r}" fill="none" stroke="${col}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${C*v} ${C}" transform="rotate(-90 42 42)"/></svg>`;
+}
+function renderResult() {
+  const s = summary();
+  if (!s) { $('resBody').innerHTML = '<div class="why">Completá los pasos y vas a ver acá la saturación, el peso y la cantidad por embalaje.</div>'; $('limChip').innerHTML = ''; renderLeftResult(); return; }
+  if (s.pending) {
+    $('limChip').innerHTML = '';
+    $('resBody').innerHTML = `<div class="why">En modo <b>a granel</b> el 100% sale de simular el volcado. Presioná <b>Simular volcado a granel</b> abajo.</div>`;
+    renderLeftResult(); return;
+  }
+  const b = boxDims();
+  $('limChip').innerHTML = s.audit ? '<span class="chip obj">Auditoría</span>' : s.lim === 'peso' ? '<span class="chip peso">Limitado por peso</span>' : '<span class="chip geo">Limitado por espacio</span>';
+  const pct = Math.round(s.sat*100);
+  let lead;
+  if (s.audit) lead = `Hoy viajan <b>${fmt(s.audit)}</b> de <b>${fmt(s.nMax)}</b> piezas posibles.` + (s.audit < Math.min(s.nMax, s.nW) ? ` Entrarían <b>${fmt(Math.min(s.nMax, s.nW) - s.audit)}</b> más${s.nW < s.nMax ? ' sin pasar el límite de peso' : ''}.` : '');
+  else if (s.tareOver) lead = `El embalaje vacío ya pesa <b>${fmt(s.tare + s.fill, 1)} kg</b>, igual o más que el límite manual de ${fmt(s.man)} kg. Usá autoelevador o un embalaje más liviano.`;
+  else if (s.lim === 'peso') lead = `Entran <b>${fmt(s.nMax)}</b> por espacio, pero ${s.limSrc === 'manip' ? `con ${fmt(s.tare + s.fill, 1)} kg de embalaje el peso bruto manipulable (${fmt(s.man)} kg)` : `la carga máxima del embalaje (${fmt(b.kg)} kg)`} corta en <b>${fmt(s.nW)}</b>. Conviene un embalaje más chico.`;
+  else lead = `<b>${fmt(s.n)}</b> de <b>${fmt(s.nMax)}</b> piezas posibles: el embalaje queda lleno.`;
+  const scale = Math.max(s.gross, s.man || 0, 1e-9), wp = v => (v/scale*100).toFixed(2) + '%';
+  const COL = { p: '#1f5f9e', e: boxType === 'madera' ? '#8a6338' : boxType === 'plastico' ? '#4f78a3' : '#b8895a', r: '#9fb2c3' };
+  const grossHTML = `<div class="gross">
+      <div class="gh"><span>Peso bruto del embalaje</span><b>${fmt(s.gross, s.gross < 10 ? 2 : 1)} kg</b></div>
+      <div class="stack"><i style="width:${wp(s.wKg)};background:${COL.p}"></i><i style="width:${wp(s.tare)};background:${COL.e}"></i><i style="width:${wp(s.fill)};background:${COL.r}"></i>${s.man ? `<span class="mk" style="left:calc(${wp(s.man)} - 1px)" title="Límite manipulable"></span>` : ''}</div>
+      <dl class="kv">
+        <dt><i style="background:${COL.p}"></i>Piezas (${fmt(s.audit || s.n)} × ${part.massKg < 1 ? fmt(part.massKg*1000, 1) + ' g' : fmt(part.massKg, 2) + ' kg'})</dt><dd>${fmt(s.wKg, 2)} kg</dd>
+        <dt><i style="background:${COL.e}"></i>Embalaje vacío</dt><dd>${fmt(s.tare, 2)} kg</dd>
+        ${s.fill ? `<dt><i style="background:${COL.r}"></i>Relleno y separadores</dt><dd>${fmt(s.fill, 2)} kg</dd>` : ''}
+        <dt class="tot">Total</dt><dd class="tot">${fmt(s.gross, 2)} kg</dd>
+      </dl>
+      ${handling === 'man' && s.man ? `<div class="lim${s.gross > s.man + 1e-9 ? ' over' : ''}">${s.gross > s.man + 1e-9 ? 'Supera' : 'Dentro del'} límite manual de ${fmt(s.man)} kg</div>` : `<div class="lim">Manipulación con ${handling === 'fork' ? 'autoelevador' : 'límite manual sin definir'}${b.kg ? ` · carga máxima ${fmt(b.kg)} kg` : ''}</div>`}
+    </div>`;
+  $('resBody').innerHTML = `
+    <div class="gauge">${gaugeSVG(s.sat)}<div><div class="gv">${pct}%</div><div class="gl">${lead}</div></div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="v">${fmt(s.audit || s.n)}</div><div class="l">piezas por embalaje</div></div>
+      <div class="kpi"><div class="v">${fmt(s.nMax)}</div><div class="l">máximo posible (100%)</div></div>
+      <div class="kpi"><div class="v">${fmt(s.wKg, s.wKg < 10 ? 2 : 1)} kg</div><div class="l">peso de las piezas</div></div>
+      <div class="kpi"><div class="v">${Math.round(s.volOcc*100)}%</div><div class="l">volumen ocupado por material</div></div>
+    </div>${grossHTML}`;
+  renderLeftResult();
+}
+function renderLeftResult() {
+  if (!result || !part) { $('resSub').textContent = part ? 'Calculando…' : 'Elegí una pieza en el paso 1.'; $('alts').innerHTML = ''; $('why').innerHTML = ''; $('layers').innerHTML = ''; return; }
+  const s = summary(), b = boxDims();
+  $('resSub').textContent = `${part.src === 'cat' ? part.name + ' ' + part.desc : part.name} en ${fmt(b.L*10)} × ${fmt(b.W*10)} × ${fmt(b.H*10)} mm · modo ${mode === 'ord' ? 'ordenado' : 'a granel'}.`;
+  const rows = result.alts.slice().sort((x, y) => y.n - x.n).map(a => `<button class="alt${a.id === viewAlt ? ' on' : ''}${a.n ? '' : ' na'}" onclick="showAlt('${a.id}')"><span class="t">${a.name}${result.best && a.id === result.best.id ? ' <span class="chip obj" style="padding:1px 7px;font-size:10px">elegido</span>' : ''}</span><span class="n">${fmt(a.n)}</span><span class="s">${a.sub} · ${a.oris || 0} orientación${a.oris === 1 ? '' : 'es'}</span></button>`);
+  const bk = result.bulk;
+  rows.push(`<button class="alt${bk ? '' : ' na'}" onclick="${bk ? "setView('phys')" : 'startBulk()'}"><span class="t">A granel</span><span class="n">${bk ? fmt(bk.n) : '—'}</span><span class="s">${bk ? (bk.extrap ? 'extrapolado de una muestra simulada' : 'volcado y vibrado simulado') : 'sin simular todavía: clic para simular'}</span></button>`);
+  $('alts').innerHTML = rows.join('');
+  // explicación
+  const best = result.best, a = result.alts.find(x => x.id === viewAlt) || best, g = result.alts.find(x => x.id === 'grid');
+  let why = '';
+  if (mode === 'bulk') why = bk ? `En modo a granel el 100% es lo que entra volcando y vibrando: <b>${fmt(bk.n)}</b> piezas. Acomodadas en orden entrarían <b>${fmt(result.maxOrd || 0)}</b>${result.maxOrd > bk.n ? ` (${Math.round((result.maxOrd/bk.n - 1)*100)}% más)` : ''}.` : 'Simulá el volcado para conocer el 100% a granel.';
+  else if (best) {
+    why = `Se evaluaron ${result.alts.length} estrategias. Gana <b>${best.name}</b> con <b>${fmt(best.n)}</b> piezas`;
+    if (g && best.id !== 'grid' && g.n) why += `, ${fmt(best.n - g.n)} más que la grilla simple (+${Math.round((best.n/g.n - 1)*100)}%)`;
+    why += '. ';
+    if (best.id === 'ht') why += 'Alternar cabeza y punta deja la cabeza de cada tornillo al lado del vástago de su vecino, así entran más juntos que si todas las cabezas quedaran alineadas. ';
+    if (best.id === 'hex') why += 'Las piezas redondas en filas intercaladas aprovechan el hueco que deja cada círculo. ';
+    if (best.id === 'mix') why += `Combina ${best.oris} orientaciones para rellenar el espacio que una sola orientación deja vacío. `;
+    if (prio !== 'qty') why += prio === 'pick' ? 'Por prioridad de picking se prefirió la opción con menos orientaciones dentro del 5% del máximo. ' : 'Por prioridad de estabilidad se prefirió la opción con más piezas apoyadas en su cara grande dentro del 5% del máximo. ';
+    if (s && !s.pending && s.lim === 'peso') why += `<br><br>El peso manda: ${fmt(s.nMax)} piezas pesarían ${fmt(s.nMax*part.massKg, 1)} kg` + (s.limSrc === 'manip' ? ` y, sumando ${fmt(s.tare + s.fill, 1)} kg de embalaje, el bulto llegaría a ${fmt(s.nMax*part.massKg + s.tare + s.fill, 1)} kg: más que los ${fmt(s.man)} kg manipulables a mano.` : `, más que la carga máxima del embalaje (${fmt(s.kgLim)} kg).`);
+  } else why = 'La pieza no entra en el embalaje en ninguna orientación permitida.';
+  $('why').innerHTML = why;
+  // capas
+  if (a && a.placements.length && mode === 'ord') {
+    const L = new Map(); a.placements.forEach(q => { const k = q.c[2].toFixed(2); L.set(k, (L.get(k) || 0) + 1); });
+    const ks = [...L.keys()].sort((x, y) => x - y);
+    $('layLbl').textContent = `Armado por capas · ${a.name} (${fmt(a.n)} u.)`;
+    $('layers').innerHTML = ks.slice(0, 12).map((k, i) => `<tr><td>Nivel ${i + 1} · centro a ${fmt(k*10)} mm</td><td>${fmt(L.get(k))} u.</td></tr>`).join('') + (ks.length > 12 ? `<tr><td>… y ${ks.length - 12} niveles más</td><td></td></tr>` : '');
+  } else $('layers').innerHTML = '';
+}
+function showAlt(id) { const a = result && result.alts.find(x => x.id === id); if (!a || !a.n) return; viewAlt = id; renderLeftResult(); drawPack(); setView('pack'); }
+
+// ═════════════════════ DIBUJO DEL ACOMODO ═════════════════════
+const PAL = [0x1f5f9e, 0xd08a2c, 0x2f8f6a, 0x8e5bb5, 0xc4483e, 0x4aa3c9, 0x7b8a2e, 0xb05c8a];
+let packInst = [], packSorted = [];
+const MAX_DRAW = 30000;
+// texturas procedurales (sin imágenes externas)
+const TEXC = {}, TILE = { carton: 25, madera: 40, plastico: 20 };
+function makeTex(type) {
+  if (TEXC[type]) return TEXC[type];
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  if (type === 'carton') {
+    g.fillStyle = '#b8895a'; g.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 6) { g.fillStyle = x % 12 ? 'rgba(255,238,210,0.06)' : 'rgba(70,40,15,0.08)'; g.fillRect(x, 0, 3, 256); }  // ondas del corrugado
+    for (let i = 0; i < 2600; i++) { const a = Math.random()*0.11; g.fillStyle = Math.random() < 0.5 ? `rgba(80,48,18,${a})` : `rgba(255,236,205,${a})`; g.fillRect(Math.random()*256, Math.random()*256, 1 + Math.random()*5, 1); }
+  } else if (type === 'madera') {
+    const cols = ['#c99d66', '#b98b56', '#d1a874', '#c29462'];
+    for (let r = 0; r < 4; r++) {
+      const y0 = r*64; g.fillStyle = cols[r]; g.fillRect(0, y0, 256, 64);
+      for (let k = 0; k < 10; k++) {
+        g.strokeStyle = `rgba(95,58,22,${0.10 + Math.random()*0.14})`; g.lineWidth = 0.8 + Math.random()*1.4; g.beginPath();
+        const yy = y0 + 4 + Math.random()*56, ph = Math.random()*6, am = 1 + Math.random()*2.5;
+        for (let x = 0; x <= 256; x += 8) { const y = yy + Math.sin(x/38 + ph)*am; x ? g.lineTo(x, y) : g.moveTo(x, y); }
+        g.stroke();
+      }
+      if (Math.random() < 0.6) { g.fillStyle = 'rgba(92,55,20,0.38)'; g.beginPath(); g.ellipse(Math.random()*240 + 8, y0 + 18 + Math.random()*28, 7, 4, 0, 0, Math.PI*2); g.fill(); }
+      g.fillStyle = 'rgba(55,32,10,0.6)'; g.fillRect(0, y0 + 61, 256, 3);   // junta entre tablas
+    }
+  } else {
+    g.fillStyle = '#4f78a3'; g.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 32) { g.fillStyle = 'rgba(255,255,255,0.09)'; g.fillRect(0, y, 256, 3); g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, y + 3, 256, 2); }
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; TEXC[type] = t; return t;
+}
+function boxMat(type, w, h, opaque) {
+  const t = makeTex(type).clone(); t.needsUpdate = true; t.repeat.set(Math.max(w, 0.1)/TILE[type], Math.max(h, 0.1)/TILE[type]);
+  const tr = opaque ? 0 : (+$('trans').value || 0)/100;
+  return new THREE.MeshLambertMaterial({ map: t, transparent: !opaque, opacity: 1 - tr, depthWrite: opaque || tr < 0.02 });
+}
+function boxVis(L, W, H) {
+  const T = BOX_TYPES[boxType], th = T.th, type = boxType, g = new THREE.Group();
+  const put = (parent, geo, mat, x, y, z, wall) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.userData.own = true; m.userData.wall = wall; parent.add(m);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: T.edge, transparent: true, opacity: 0.55 }));
+    e.position.set(x, y, z); e.userData.own = true; e.userData.edge = wall; parent.add(e); return m;
+  };
+  put(g, new THREE.BoxGeometry(L + 2*th, th, W + 2*th), boxMat(type, L, W, true), 0, -th/2, 0, false);                 // fondo
+  put(g, new THREE.BoxGeometry(th, H, W + 2*th), boxMat(type, W, H), L/2 + th/2, H/2, 0, true);                           // laterales
+  put(g, new THREE.BoxGeometry(th, H, W + 2*th), boxMat(type, W, H), -L/2 - th/2, H/2, 0, true);
+  put(g, new THREE.BoxGeometry(L, H, th), boxMat(type, L, H), 0, H/2, W/2 + th/2, true);                                   // frente y fondo
+  put(g, new THREE.BoxGeometry(L, H, th), boxMat(type, L, H), 0, H/2, -W/2 - th/2, true);
+  if (type === 'carton') {            // solapas superiores abiertas (caja tipo RSC)
+    const d = W/2, ang = 0.42;
+    [[1, 'z', L], [-1, 'z', L], [1, 'x', W], [-1, 'x', W]].forEach(([sg, ax, len]) => {
+      const piv = new THREE.Group();
+      const geo = ax === 'z' ? new THREE.BoxGeometry(len, d, th) : new THREE.BoxGeometry(th, d*0.96, len);
+      put(piv, geo, boxMat(type, len, d), 0, (ax === 'z' ? d : d*0.96)/2, 0, true);
+      if (ax === 'z') { piv.position.set(0, H, sg*(W/2 + th/2)); piv.rotation.x = sg*ang; }
+      else { piv.position.set(sg*(L/2 + th/2), H, 0); piv.rotation.z = -sg*ang; }
+      g.add(piv);
+    });
+    // cinta de embalar en el fondo visible por los costados
+  } else if (type === 'madera') {    // listones de refuerzo en esquinas y borde superior + patines
+    const bt = Math.min(6, Math.max(3, Math.min(L, W)*0.06)), dark = boxMat(type, bt, H);
+    dark.color = new THREE.Color(0xa07a4c);
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([sx, sz]) => put(g, new THREE.BoxGeometry(bt, H, th*0.9), dark, sx*(L/2 + th - bt/2), H/2, sz*(W/2 + th*1.45), true));
+    const rim = boxMat(type, L, bt); rim.color = new THREE.Color(0xa07a4c);
+    [1, -1].forEach(sz => put(g, new THREE.BoxGeometry(L + 2*th, bt, th*0.9), rim, 0, H - bt/2, sz*(W/2 + th*1.45), true));
+    const sk = Math.min(10, Math.max(4, H*0.12)), skMat = boxMat(type, L, sk, true); skMat.color = new THREE.Color(0x8c6a40);
+    const nsk = W > 60 ? 3 : 2;
+    for (let i = 0; i < nsk; i++) { const z = -W/2 + sk/2 + i*(W - sk)/(nsk - 1); put(g, new THREE.BoxGeometry(L + 2*th, sk, sk), skMat, 0, -th - sk/2, z, false); }
+  } else {                            // plástico: labio superior
+    const lip = boxMat(type, L, 1.2);
+    [1, -1].forEach(sz => put(g, new THREE.BoxGeometry(L + 2*th + 1, 1.2, 1), lip, 0, H - 0.6, sz*(W/2 + th + 0.5), true));
+    [1, -1].forEach(sx => put(g, new THREE.BoxGeometry(1, 1.2, W + 2*th + 3), lip, sx*(L/2 + th + 0.5), H - 0.6, 0, true));
+  }
+  return g;
+}
+function applyTrans() {
+  const tr = (+$('trans').value || 0)/100;
+  [gPack, gPhys].forEach(G => G.traverse(o => {
+    if (o.userData.wall && o.material) { o.material.opacity = 1 - tr; o.material.depthWrite = tr < 0.02; o.material.needsUpdate = true; }
+    if (o.userData.edge && o.material) o.material.opacity = Math.max(0.25, 0.55 - tr*0.2);
+  }));
+}
+function drawPack() {
+  clearG(gPack); packInst = []; packSorted = [];
+  if (!part) return;
+  const b = boxDims(); gPack.add(boxVis(b.L, b.W, b.H));
+  const a = result && result.alts.find(x => x.id === viewAlt);
+  $('cutBox').hidden = !(a && a.n && view === 'pack');
+  if (!a || !a.n) return;
+  const s = summary(), lim = s && !s.pending ? Math.min(s.audit || s.n, a.n) : a.n;
+  packSorted = a.placements.slice().sort((x, y) => x.c[2] - y.c[2] || x.c[0] - y.c[0] || x.c[1] - y.c[1]).slice(0, Math.min(lim, MAX_DRAW));
+  const n = packSorted.length, colOri = $('colOri').checked, keys = [...new Set(packSorted.map(q => q.key))], col = new THREE.Color();
+  const meshes = part.proxy && n*importRaw.tris > 5e6 ? [{ geo: part.proxy, matrix: new THREE.Matrix4() }] : part.meshes;
+  const tmp = new THREE.Matrix4(), M = new THREE.Matrix4();
+  meshes.forEach(m => {
+    const im = new THREE.InstancedMesh(m.geo, new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 50, specular: 0x555555 }), Math.max(1, n));
+    packSorted.forEach((q, i) => {
+      M.makeTranslation(-b.L/2 + q.c[0], q.c[2], -b.W/2 + q.c[1]).multiply(q.R);
+      tmp.copy(M).multiply(m.matrix); im.setMatrixAt(i, tmp);
+      im.setColorAt(i, col.setHex(m.tint !== undefined ? m.tint : colOri ? PAL[keys.indexOf(q.key) % PAL.length] : partColor()));
+    });
+    im.count = n; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    gPack.add(im); packInst.push(im);
+  });
+  $('cut').value = 100; applyCut();
+}
+function applyCut() {
+  const b = boxDims(), v = +$('cut').value/100;
+  const n = v >= 1 ? packSorted.length : packSorted.filter(q => q.c[2] <= b.H*v + 1e-6).length;
+  packInst.forEach(im => im.count = n);
+  $('cutLbl').textContent = v >= 1 ? 'todas' : `${fmt(b.H*v*10)} mm · ${fmt(n)} u.`;
+}
+
+// ═════════════════════ SIMULACIÓN FÍSICA ═════════════════════
+function makeShape(p, S) {
+  if (p.kind === 'box') return new CANNON.Box(new CANNON.Vec3(p.he[0]*S, p.he[1]*S, p.he[2]*S));
+  return new CANNON.Cylinder(p.rt*S, p.rb*S, p.h*S, p.segs);
+}
+function physSetup(kind, dims) {
+  stopPhys(); clearG(gPhys);
+  const S = 1/Math.max(part.size.x, part.size.y, part.size.z), { L, W, H } = dims, Ls = L*S, Ws = W*S, Hs = H*S, t = 0.5, Rb = part.boundR*S;
+  const world = new CANNON.World(); world.gravity.set(0, -981*S, 0); world.broadphase = new CANNON.SAPBroadphase(world);
+  world.solver.iterations = 12; world.allowSleep = true;
+  world.defaultContactMaterial.friction = BOX_TYPES[boxType].fric; world.defaultContactMaterial.restitution = 0.05;
+  world.defaultContactMaterial.contactEquationStiffness = 5e6; world.defaultContactMaterial.contactEquationRelaxation = 4;
+  const wallH = Hs + 2.5*Rb + 1, box = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC }); box.allowSleep = false;
+  box.addShape(new CANNON.Box(new CANNON.Vec3(Ls/2 + t, t/2, Ws/2 + t)), new CANNON.Vec3(0, -t/2, 0));
+  box.addShape(new CANNON.Box(new CANNON.Vec3(t/2, wallH/2, Ws/2 + t)), new CANNON.Vec3(Ls/2 + t/2, wallH/2, 0));
+  box.addShape(new CANNON.Box(new CANNON.Vec3(t/2, wallH/2, Ws/2 + t)), new CANNON.Vec3(-Ls/2 - t/2, wallH/2, 0));
+  box.addShape(new CANNON.Box(new CANNON.Vec3(Ls/2, wallH/2, t/2)), new CANNON.Vec3(0, wallH/2, Ws/2 + t/2));
+  box.addShape(new CANNON.Box(new CANNON.Vec3(Ls/2, wallH/2, t/2)), new CANNON.Vec3(0, wallH/2, -Ws/2 - t/2));
+  world.addBody(box);
+  const bv = boxVis(L, W, H); bv.scale.setScalar(S); gPhys.add(bv);
+  const sz = [part.size.x, part.size.y, part.size.z].sort((a, b) => b - a), perLayer = Math.max(1, Math.floor(L*W/(sz[0]*sz[1])));
+  phys = { kind, S, world, box, bv, Ls, Ws, Hs, Rb, wallH, bodies: [], t: 0, phase: kind === 'bulk' ? 'fill' : 'shake', phaseT: 0, lastSpawn: -1, cycle: 1, lastIn: -1, perLayer, maxBodies: 520, running: true, overT: 0, dims };
+  $('hud').hidden = false;
+  frame(new THREE.Vector3(Ls, Hs*1.35, Ws), new THREE.Vector3(0, Hs*0.45, 0));
+  setView('phys', true);
+  return phys;
+}
+function addBody(pos, quat) {
+  const S = phys.S, b = new CANNON.Body({ mass: Math.max(part.massKg, 1e-4) });
+  part.prims.forEach(p => b.addShape(makeShape(p, S), new CANNON.Vec3(p.off.x*S, p.off.y*S, p.off.z*S), new CANNON.Quaternion(p.quat.x, p.quat.y, p.quat.z, p.quat.w)));
+  b.position.set(pos.x, pos.y, pos.z); b.quaternion.set(quat.x, quat.y, quat.z, quat.w);
+  b.linearDamping = 0.08; b.angularDamping = 0.15; b.sleepSpeedLimit = 0.25; b.sleepTimeLimit = 0.5; b.born = phys.t;
+  phys.world.addBody(b);
+  const g = new THREE.Group(); g.scale.setScalar(S);
+  const meshes = part.proxy ? [{ geo: part.proxy, matrix: new THREE.Matrix4() }] : part.meshes;
+  meshes.forEach(m => { const ms = new THREE.Mesh(m.geo, metalMat(m.tint !== undefined ? m.tint : partColor())); ms.userData.tint = m.tint !== undefined; ms.matrixAutoUpdate = false; ms.matrix.copy(m.matrix); g.add(ms); });
+  b.vis = g; gPhys.add(g); phys.bodies.push(b); return b;
+}
+const bodyTop = b => { if (b.aabbNeedsUpdate) b.computeAABB(); return b.aabb.upperBound.y; };
+const settled = b => b.sleepState === CANNON.Body.SLEEPING || (b.velocity.norm() < 1.5 && phys.t - b.born > 0.4);
+function inside() { const lim = phys.Hs + 0.03; let i = 0, o = 0; phys.bodies.forEach(b => bodyTop(b) <= lim ? i++ : o++); return { i, o }; }
+function rq() { const u1 = Math.random(), u2 = Math.random()*2*Math.PI, u3 = Math.random()*2*Math.PI, a = Math.sqrt(1 - u1), c = Math.sqrt(u1); return { x: a*Math.sin(u2), y: a*Math.cos(u2), z: c*Math.sin(u3), w: c*Math.cos(u3) }; }
+function startBulk() {
+  if (!part) return;
+  if (typeof CANNON === 'undefined') { $('physTxt').innerHTML = '<span style="color:var(--bad)">No se pudo cargar el motor físico. Revisá la conexión a internet.</span>'; return; }
+  const b = boxDims(), env = part.size.x*part.size.y*part.size.z, est = b.L*b.W*b.H*0.45/env;
+  let dims = { L: b.L, W: b.W, H: b.H }, extrap = false;
+  if (est > 260) {
+    const f = Math.cbrt(60/est), mn = Math.max(part.size.x, part.size.y, part.size.z)*3;
+    dims = { L: Math.min(b.L, Math.max(mn, b.L*f)), W: Math.min(b.W, Math.max(mn, b.W*f)), H: Math.min(b.H, Math.max(mn, b.H*f)) }; extrap = true;
+  }
+  physSetup('bulk', dims); phys.extrap = extrap; if (extrap) phys.maxBodies = 260;
+  $('physTxt').innerHTML = extrap
+    ? `Entran demasiadas piezas para simularlas todas (≈${fmt(est)}). Se simula una muestra de <b>${fmt(dims.L*10)} × ${fmt(dims.W*10)} × ${fmt(dims.H*10)} mm</b> y se extrapola al embalaje completo.`
+    : 'Volcando piezas con orientación al azar. Cuando rebalsa se vibra, se completa y se repite hasta que no entra ninguna más.';
+}
+function startValidate() {
+  if (!part || !result) return;
+  if (typeof CANNON === 'undefined') { $('physTxt').innerHTML = '<span style="color:var(--bad)">No se pudo cargar el motor físico.</span>'; return; }
+  const a = result.alts.find(x => x.id === viewAlt) || result.best; if (!a || !a.n) return;
+  const s = summary(), n = Math.min(a.n, s && !s.pending ? (s.audit || s.n) : a.n);
+  if (n > 600) { $('physTxt').innerHTML = `Son ${fmt(n)} piezas: demasiadas para validar en el navegador. En la versión con servidor se valida completo.`; return; }
+  const b = boxDims(); physSetup('validate', { L: b.L, W: b.W, H: b.H });
+  const pl = a.placements.slice().sort((x, y) => x.c[2] - y.c[2]).slice(0, n), M = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), S = phys.S;
+  pl.forEach(p => { M.makeTranslation(-b.L/2 + p.c[0], p.c[2], -b.W/2 + p.c[1]).multiply(p.R).decompose(pos, q, sc); const bd = addBody({ x: pos.x*S, y: pos.y*S + 0.002, z: pos.z*S }, q); bd.born = -1; });
+  phys.validN = n;
+  $('physTxt').innerHTML = `Cargadas ${fmt(n)} piezas del acomodo "${a.name}". Se vibra el embalaje para verificar que no se desarma.`;
+}
+function stopPhys() { if (phys) phys.running = false; }
+function setPh(t) { $('hPh').textContent = t; }
+function physStep() {
+  const P = phys; if (!P || !P.running) return;
+  const amp = 0.15, f = 5, w = 2*Math.PI*f, DT = 1/120;
+  for (let s = 0; s < 6; s++) {
+    if (P.phase === 'shake') { const tau = P.t - P.phaseT; P.box.velocity.set(amp*w*Math.cos(w*tau), 0.5*amp*w*Math.cos(w*tau*1.3), amp*w*Math.cos(w*tau*0.77 + 1)); }
+    P.world.step(DT); P.t += DT;
+  }
+  for (let i = P.bodies.length - 1; i >= 0; i--) { const b = P.bodies[i]; if (b.position.y < -3) { P.world.removeBody(b); gPhys.remove(b.vis); P.bodies.splice(i, 1); } }
+  if (P.phase === 'fill') {
+    setPh('Volcando'); let tp = 0, over = 0;
+    P.bodies.forEach(b => { const y = bodyTop(b); if (settled(b)) { tp = Math.max(tp, y); if (y > P.Hs + 0.03) over++; } });
+    if (over >= Math.max(2, Math.ceil(P.perLayer*0.5)) || P.bodies.length >= P.maxBodies) { P.overT += 6*DT; if (P.overT > 0.4) { P.phase = 'shake'; P.phaseT = P.t; P.overT = 0; P.bodies.forEach(b => b.wakeUp()); } }
+    else if (P.t - P.lastSpawn > 0.05) { const y = Math.min(Math.max(tp, P.Hs) + P.Rb + 0.3, P.wallH - P.Rb), mx = Math.max(0, P.Ls/2 - P.Rb*0.9), mz = Math.max(0, P.Ws/2 - P.Rb*0.9); addBody({ x: (Math.random()*2 - 1)*mx, y, z: (Math.random()*2 - 1)*mz }, rq()); P.lastSpawn = P.t; }
+  } else if (P.phase === 'shake') {
+    setPh('Vibrando'); if (P.t - P.phaseT > 2.5) { P.box.velocity.set(0,0,0); P.box.position.set(0,0,0); P.phase = 'settle'; P.phaseT = P.t; }
+  } else if (P.phase === 'settle') {
+    setPh('Asentando');
+    if (P.t - P.phaseT > 1.2) { const { i } = inside(); if (P.kind === 'bulk' && i > P.lastIn && P.cycle < 3 && P.bodies.length < P.maxBodies) { P.lastIn = i; P.cycle++; P.phase = 'fill'; } else physDone(); }
+  }
+  const c = inside(); $('hIn').textContent = fmt(c.i); $('hOut').textContent = fmt(c.o); $('hAll').textContent = fmt(P.bodies.length); $('hT').textContent = P.t.toFixed(1) + ' s';
+}
+const OUT_MAT = new THREE.MeshPhongMaterial({ color: 0xc4483e, shininess: 30 });
+function physDone() {
+  const P = phys; P.running = false; setPh('Terminado');
+  const lim = P.Hs + 0.03; let n = 0;
+  P.bodies.forEach(b => { const out = bodyTop(b) > lim; if (out) b.vis.children.forEach(m => m.material = OUT_MAT); else n++; });
+  if (P.kind === 'bulk') {
+    const b = boxDims(), d = P.dims, outN = P.bodies.length - n, full = outN > 0;
+    let N = P.extrap ? Math.floor(n*(b.L*b.W*b.H)/(d.L*d.W*d.H)) : n, notes = [];
+    if (!full) notes.push('el embalaje no llegó a rebalsar dentro del límite de piezas simulables, así que el valor es un mínimo');
+    if (result && result.maxOrd && N > result.maxOrd) { N = result.maxOrd; notes.push('se acotó al máximo ordenado, porque a granel no puede entrar más que acomodado (la diferencia viene de superposiciones de la simulación)'); }
+    if (result) result.bulk = { n: N, sample: n, extrap: P.extrap, full, key: bulkKey() };
+    $('physTxt').innerHTML = `A granel entran <b>${fmt(N)}</b> piezas${P.extrap ? ` (muestra: ${fmt(n)} en ${fmt(d.L*10)} × ${fmt(d.W*10)} × ${fmt(d.H*10)} mm, extrapolado al volumen total)` : ''}. En rojo, las que sobresalen y no se cuentan.` +
+      (notes.length ? `<br><span style="color:var(--warn)">Atención: ${notes.join('; ')}.</span>` : '');
+  } else {
+    const ok = n === P.validN;
+    $('physTxt').innerHTML = ok ? `<span style="color:var(--ok)">Acomodo estable:</span> las ${fmt(n)} piezas siguen dentro después de vibrar.` : `<span style="color:var(--warn)">${fmt(P.validN - n)} piezas quedaron afuera</span> después de vibrar (en rojo). Subí la holgura o usá tapa.`;
+  }
+  renderResult();
+}
+
+// ═════════════════════ NAVEGACIÓN ═════════════════════
+function goStep(s) {
+  s = Math.max(0, Math.min(3, s)); if (s > 0 && !part) { flashPart(); return; }
+  for (let i = 0; i < s; i++) done[i] = true;
+  step = s;
+  for (let i = 0; i < 4; i++) { $('st' + i).className = 'step' + (i === s ? ' on' : done[i] ? ' done' : ''); $('p' + i).hidden = i !== s; }
+  $('backBtn').disabled = s === 0;
+  $('nextBtn').textContent = s === 2 ? 'Calcular' : s === 3 ? 'Recalcular' : 'Continuar';
+  if (s === 3) { compute(); setView(mode === 'bulk' ? 'phys' : 'pack'); if (mode === 'bulk' && (!result.bulk)) startBulk(); }
+  else if (s === 0) setView('part');
+  else if (s >= 1 && view === 'part') setView('pack');
+}
+function flashPart() { $('impMsg').className = 'msg warn'; $('impMsg').textContent = 'Primero cargá una pieza.'; setSource(source); }
+function setView(v, keepCam) {
+  view = v; ['part','pack','phys'].forEach(k => $('v-' + k).className = k === v ? 'on' : '');
+  gPart.visible = v === 'part'; gPack.visible = v === 'pack'; gPhys.visible = v === 'phys'; grid.visible = v === 'part';
+  $('hud').hidden = v !== 'phys' || !phys; $('dimTag').hidden = v !== 'part';
+  if (v === 'pack' && !gPack.children.length) drawPack();
+  $('cutBox').hidden = !(v === 'pack' && result && viewAlt && result.alts.find(x => x.id === viewAlt)?.n);
+  if (!keepCam) fitView();
+}
+function fitView() {
+  const b = boxDims();
+  if (view === 'part') { if (part) frame(part.size.clone().multiplyScalar(1.7), new THREE.Vector3(0, part.size.y/2, 0)); }
+  else if (view === 'pack') { const fl = boxType === 'carton' ? b.W*0.45 : 0, th = BOX_TYPES[boxType].th*2; frame(new THREE.Vector3(b.L + th + fl*0.4, b.H + fl, b.W + th + fl*0.8), new THREE.Vector3(0, (b.H + fl)/2, 0)); }
+  else if (phys) frame(new THREE.Vector3(phys.Ls, phys.Hs*1.35, phys.Ws), new THREE.Vector3(0, phys.Hs*0.45, 0));
+}
+['gap','manKg','upright','audit'].forEach(id => $(id).addEventListener('change', () => { if (id === 'audit' || id === 'manKg') { renderResult(); drawPack(); } else invalidate(); }));
+
+// ═════════════════════ EXPORTAR ═════════════════════
+function buildJson() {
+  const s = summary(), b = boxDims(), a = result && (result.alts.find(x => x.id === viewAlt) || result.best);
+  const P = part;
+  return {
+    version: '1.0', generado: new Date().toISOString(), motor: 'packsim-maqueta-0.1',
+    pieza: P ? { nombre: P.src === 'cat' ? `${P.name} ${P.desc}` : P.name, norma_o_archivo: P.norma, envolvente_mm: [P.size.x, P.size.z, P.size.y].map(v => +(v*10).toFixed(2)),
+      volumen_cm3: +P.vol.toFixed(3), peso_kg: +P.massKg.toFixed(4), origen_peso: P.massSrc, material: $('mat').value, terminacion: finish === 'custom' ? customColor : finish } : null,
+    embalaje: { tipo: boxType, nombre: boxIdx >= 0 ? BOXES[boxIdx][0] : 'A medida', interior_mm: [b.L, b.W, b.H].map(v => Math.round(v*10)), carga_max_kg: b.kg || null,
+      tara_kg: +(+$('bTare').value || 0).toFixed(3), origen_tara: { cat: 'catálogo', est: 'estimada', man: 'cargada' }[tareSrc], relleno_kg: +(+$('bFill').value || 0).toFixed(3) },
+    criterios: { modo: mode === 'ord' ? 'ordenado' : 'granel', holgura_mm: +$('gap').value, manipulacion: handling === 'man' ? 'manual' : 'autoelevador', peso_bruto_manipulable_kg: handling === 'man' ? (+$('manKg').value || null) : null, mantener_posicion: $('upright').checked, prioridad: prio },
+    resultado: s && !s.pending ? {
+      estrategia: mode === 'ord' ? a && a.name : 'A granel', piezas: s.audit || s.n, maximo_posible: s.nMax, saturacion_capacidad: +s.sat.toFixed(4),
+      factor_limitante: s.lim === 'peso' ? 'peso' : 'espacio', limite_por_peso: isFinite(s.nW) ? s.nW : null, peso_piezas_kg: +s.wKg.toFixed(3), peso_bruto_kg: +s.gross.toFixed(3), limitado_por: s.lim === 'peso' ? (s.limSrc === 'manip' ? 'peso bruto manipulable' : 'carga máxima del embalaje') : 'espacio', volumen_ocupado: +s.volOcc.toFixed(4),
+      alternativas: result.alts.map(x => ({ estrategia: x.name, piezas: x.n, orientaciones: x.oris })).concat(result.bulk ? [{ estrategia: 'A granel', piezas: result.bulk.n, extrapolado: result.bulk.extrap }] : []),
+      disposicion: mode === 'ord' && a ? packSorted.slice(0, 5000).map(q => ({ centro_mm: [q.c[0], q.c[1], q.c[2]].map(v => +(v*10).toFixed(2)), rotacion: [0,1,2].map(r => [0,1,2].map(c => Math.round(q.R.elements[c*4 + r]))) })) : [],
+      nota_disposicion: 'centro_mm en el marco del embalaje (origen en la esquina interior inferior; ejes: largo, ancho, alto). rotacion: matriz 3×3 que lleva la pieza de su sistema (catálogo/archivo, Y = eje) al embalaje en ejes del visor (X largo, Y alto, Z ancho).'
+    } : null,
+  };
+}
+function openExport() { $('jsonOut').textContent = JSON.stringify(buildJson(), null, 2); $('modal').hidden = false; }
+function copyJson() { const t = $('jsonOut').textContent; navigator.clipboard.writeText(t).then(() => { $('cpBtn').textContent = 'Copiado'; setTimeout(() => $('cpBtn').textContent = 'Copiar', 1500); }).catch(() => { const r = document.createRange(); r.selectNodeContents($('jsonOut')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }); }
+function downloadJson() { const blob = new Blob([$('jsonOut').textContent], { type: 'application/json' }), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'packsim_resultado.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+
+// ═════════════════════ ARRANQUE ═════════════════════
+['dragenter','dragover'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave','drop'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' || !e.relatedTarget) $('drop').classList.remove('over'); }));
+window.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) { if (step !== 0) goStep(0); setSource('file'); onFile(f); } });
+$('mat').innerHTML = MATS.map(([id, n, d]) => `<option value="${id}">${n} (${d} g/cm³)</option>`).join('');
+(function loop() { requestAnimationFrame(loop); physStep(); if (phys) { phys.bv.position.set(phys.box.position.x, phys.box.position.y, phys.box.position.z); phys.bodies.forEach(b => { b.vis.position.set(b.position.x, b.position.y, b.position.z); b.vis.quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w); }); }
+  const t = orbit.t; camera.position.set(t.x + orbit.r*Math.sin(orbit.th)*Math.cos(orbit.ph), t.y + orbit.r*Math.sin(orbit.ph), t.z + orbit.r*Math.cos(orbit.th)*Math.cos(orbit.ph)); camera.lookAt(t); renderer.render(scene, camera); })();
+renderFams(); renderFamFields(); renderSwatches(); renderBoxes(); pickBox(1);
+resize(); applyCatalog(); goStep(0);
+</script>
+</body>
+</html>

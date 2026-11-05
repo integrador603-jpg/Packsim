@@ -1,0 +1,25 @@
+[project]
+name = "packsim"
+version = "0.1.0"
+description = "Motor de disposición de piezas en embalajes y saturación por capacidad"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "trimesh>=4.0",
+  "manifold3d>=2.4",
+  "ezdxf>=1.2",
+  "cadquery-ocp>=7.7",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "python-fcl>=0.7"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["packsim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

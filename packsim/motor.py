@@ -210,6 +210,10 @@ def _simular_granel(pieza, emb, crit, alts, mejor, t0, avisar):
         m = fis["muestra"]
         partes.append(f"Se simuló una muestra de {' × '.join(f'{x:g}' for x in m['interior_mm'])} mm ({m['piezas']} piezas) "
                       "y se extrapoló al embalaje completo con la densidad del interior y la corrección por bordes (±5%).")
+    if fis.get("llenado_parcial"):
+        lp = fis["llenado_parcial"]
+        partes.append(f"En el tiempo de simulación se llenó hasta {lp['altura_lecho_mm']:g} mm ({lp['piezas']} piezas); "
+                      "el resto se estimó con la densidad del lecho por altura.")
     if max_ord:
         partes.append(f"Acomodadas en orden entrarían {max_ord}" + (f" ({round((max_ord / n - 1) * 100)}% más)." if n and max_ord > n else "."))
     if fis["acotado_al_ordenado"]:

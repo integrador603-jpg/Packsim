@@ -440,7 +440,8 @@ function htmlFisica(R, K) {
   if (F.tipo === 'granel') {
     const m = F.muestra;
     return `<div class="fis"><h4>Simulación a granel <span class="chip geo">${fmt(F.tiempo_simulado_s, 0)} s simulados</span></h4><div class="why">
-      ${m ? `Muestra de ${m.interior_mm.map(x => fmt(x)).join(' × ')} mm con ${fmt(m.piezas)} piezas, extrapolada al embalaje (±5%).` : `Se simularon todas las piezas (${fmt(R.maximo_posible)}).`}
+      ${m ? `Muestra de ${m.interior_mm.map(x => fmt(x)).join(' × ')} mm con ${fmt(m.piezas)} piezas, extrapolada al embalaje (±5%).` : F.llenado_parcial ? '' : `Se simularon todas las piezas (${fmt(R.maximo_posible)}).`}
+      ${F.llenado_parcial ? `Se volcaron ${fmt(F.llenado_parcial.piezas)} piezas hasta ${fmt(F.llenado_parcial.altura_lecho_mm)} mm de altura; el resto del embalaje se estimó con la densidad de ese lecho (±10%).` : ''}
       ${F.ciclos} ciclo${F.ciclos === 1 ? '' : 's'} de llenado y vibrado. Acomodadas en orden entrarían ${fmt(F.maximo_ordenado)}.
       ${F.acotado_al_ordenado ? '<br>El conteo a granel superaba al ordenado y se acotó.' : ''}</div>${ver}</div>`;
   }

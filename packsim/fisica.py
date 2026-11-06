@@ -17,6 +17,8 @@ import math
 import os
 import shutil
 import struct
+import subprocess
+import sys
 import tempfile
 import time
 
@@ -25,6 +27,7 @@ import numpy as np
 from .modelos import Embalaje, Pieza
 
 G_MM = 9810.0                 # mm/s²
+VHACD_TIEMPO_MAX_S = 10        # V-HACD se cuelga con piezas finas (una arandela tardaba 80 s)
 PASO = 1 / 120
 FPS_ANIM = 12
 CUERPOS_MAX = 420             # tope por simulación (rendimiento)
@@ -115,17 +118,8 @@ class Mundo:
                 except Exception:
                     pass
             h.export(salida)
-        else:
-            fd = os.dup(1)                                    # V-HACD escribe progreso en la salida estándar: se silencia
-            nulo = os.open(os.devnull, os.O_WRONLY)
-            try:
-                os.dup2(nulo, 1)
-                pb.vhacd(entrada, salida, os.path.join(self._tmp, "vhacd.log"), resolution=200_000, concavity=0.001,
-                         maxNumVerticesPerCH=24, minVolumePerCH=0.00005, physicsClientId=self.cid)
-            finally:
-                os.dup2(fd, 1); os.close(fd); os.close(nulo)
-            if not os.path.exists(salida) or os.path.getsize(salida) == 0:
-                shutil.copy(entrada, salida)
+        elif not _vhacd(entrada, salida):
+            _grilla_convexa(m, salida)
         forma = pb.createCollisionShape(pb.GEOM_MESH, fileName=salida, physicsClientId=self.cid)
         if forma < 0:
             raise ErrorFisica("No se pudo crear la forma física de la pieza.")
@@ -255,6 +249,61 @@ class Mundo:
         shutil.rmtree(self._tmp, ignore_errors=True)
 
 
+# ─────────────── descomposición convexa ───────────────
+
+_VHACD = (
+    "import sys, pybullet as pb\n"
+    "pb.connect(pb.DIRECT)\n"
+    "pb.vhacd(sys.argv[1], sys.argv[2], sys.argv[3], resolution=200000, concavity=0.001,"
+    " maxNumVerticesPerCH=24, minVolumePerCH=0.00005)\n"
+)
+
+
+def _vhacd(entrada: str, salida: str) -> bool:
+    """V-HACD en un proceso aparte con tiempo límite. False si falla o tarda demasiado."""
+    try:
+        subprocess.run([sys.executable, "-c", _VHACD, entrada, salida, salida + ".log"], timeout=VHACD_TIEMPO_MAX_S,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError):
+        return False
+    return os.path.exists(salida) and os.path.getsize(salida) > 0
+
+
+def _grilla_convexa(m, salida: str, divisiones: int = 4):
+    """
+    Descomposición rápida: corta la pieza en una grilla (hasta 4 partes por eje, según sus proporciones) y usa
+    el casco convexo de cada trozo. Tapa algo de los huecos, pero tarda milisegundos y nunca se cuelga.
+    """
+    import trimesh
+    lo, hi = m.bounds
+    ext = hi - lo
+    n = [int(np.clip(round(e / (ext.max() / divisiones)), 1, divisiones)) for e in ext]
+    cascos = []
+    try:
+        if not m.is_watertight:
+            raise ValueError
+        for i in range(n[0]):
+            for j in range(n[1]):
+                for k in range(n[2]):
+                    a = lo + ext * np.array([i, j, k]) / n
+                    b = lo + ext * np.array([i + 1, j + 1, k + 1]) / n
+                    celda = trimesh.creation.box(bounds=[a - 1e-6, b + 1e-6])
+                    trozo = trimesh.boolean.intersection([m, celda], engine="manifold")
+                    if trozo is not None and len(trozo.vertices) >= 4 and trozo.volume > 1e-4 * m.volume:
+                        cascos.append(trozo.convex_hull)
+    except Exception:
+        cascos = []
+    if not cascos:
+        cascos = [m.convex_hull]
+    with open(salida, "w") as f:
+        base = 1
+        for i, h in enumerate(cascos):
+            f.write(f"o parte{i}\n")
+            f.writelines("v %.6f %.6f %.6f\n" % tuple(v) for v in h.vertices)
+            f.writelines("f %d %d %d\n" % tuple(c + base) for c in h.faces)
+            base += len(h.vertices)
+
+
 # ─────────────── perfiles de vibración ───────────────
 
 def perfil_asentamiento(g=G_MM):
@@ -280,8 +329,10 @@ def perfil_transporte(semilla=7, g=G_MM):
 # ─────────────── volcado a granel ───────────────
 
 def granel(pieza: Pieza, emb: Embalaje, friccion_caja: float = 0.45, avisar=None, semilla: int = 1,
-           tiempo_max_s: float = 90) -> dict:
+           tiempo_max_s: float | None = None) -> dict:
     avisar = avisar or (lambda f, txt: None)
+    if tiempo_max_s is None:   # ~55% del límite del trabajo (el resto: forma, vibrado final, medición y animación)
+        tiempo_max_s = 0.55 * float(os.environ.get("PACKSIM_TIEMPO_MAX_FISICA_S", 240))
     L, W, H = [float(x) for x in emb.interior_mm]
     ext = pieza.envolvente_mm
     if any(sorted(ext)[i] > sorted([L, W, H])[i] for i in range(3)):
@@ -296,7 +347,7 @@ def granel(pieza: Pieza, emb: Embalaje, friccion_caja: float = 0.45, avisar=None
         f = (OBJETIVO_MUESTRA / estimado) ** (1 / 3)
         minimo = 5 * float(ext.max())
         dims = tuple(min(d, max(minimo, d * f)) for d in (L, W, H))
-        extrapolado = True
+        extrapolado = any(d < D - 1e-6 for d, D in zip(dims, (L, W, H)))   # si no se pudo achicar, es la caja entera
 
     mundo = Mundo(pieza, dims, friccion_caja, semilla)
     t_ini = time.monotonic()
@@ -306,31 +357,39 @@ def granel(pieza: Pieza, emb: Embalaje, friccion_caja: float = 0.45, avisar=None
         paso = 2 * r * 1.05
         nx, ny = max(1, int((Ls - 2 * r) // paso) + 1), max(1, int((Ws - 2 * r) // paso) + 1)
         anterior, ciclos = -1, 0
+        presupuesto = tiempo_max_s * 0.6          # tiempo real para volcar; el resto queda para vibrar y medir
         while ciclos < 5:
             ciclos += 1
             # 1) llenar hasta rebalsar
-            while len(mundo.cuerpos) < CUERPOS_MAX and time.monotonic() - t_ini < tiempo_max_s * 0.8:
+            while len(mundo.cuerpos) < CUERPOS_MAX and time.monotonic() - t_ini < presupuesto:
                 topes = [mundo.tope_mm(b) * mundo.s for b in mundo.cuerpos]
                 cima = max(topes) if topes else 0.0
                 if cima > Hs + 0.6:
                     break
                 z = max(cima, 0.0) + r + 0.05
-                lugares = [(-Ls / 2 + r + i * paso + mundo.rng.uniform(-0.05, 0.05) * paso,
-                            -Ws / 2 + r + j * paso + mundo.rng.uniform(-0.05, 0.05) * paso) for i in range(nx) for j in range(ny)]
-                mundo.rng.shuffle(lugares)
-                for x, y in lugares[:CUERPOS_MAX - len(mundo.cuerpos)]:
+                # lejos del borde se vuelcan varias capas por tanda (con piezas chatas, de a una capa no llegaba a llenar)
+                capas = max(1, min(3, int((Hs - cima) / paso)))
+                lugares = []
+                for k in range(capas):
+                    capa = [(-Ls / 2 + r + i * paso + mundo.rng.uniform(-0.05, 0.05) * paso,
+                             -Ws / 2 + r + j * paso + mundo.rng.uniform(-0.05, 0.05) * paso, z + k * paso)
+                            for i in range(nx) for j in range(ny)]
+                    mundo.rng.shuffle(capa)
+                    lugares += capa
+                for x, y, zz in lugares[:CUERPOS_MAX - len(mundo.cuerpos)]:
                     q = mundo.rng.normal(size=4); q /= np.linalg.norm(q)
-                    mundo.agregar((min(max(x, -Ls / 2 + r), Ls / 2 - r), min(max(y, -Ws / 2 + r), Ws / 2 - r), z), tuple(q))
-                mundo.asentar(0.8, umbral=0.25)
+                    mundo.agregar((min(max(x, -Ls / 2 + r), Ls / 2 - r), min(max(y, -Ws / 2 + r), Ws / 2 - r), zz), tuple(q))
+                mundo.asentar(0.8 + 0.3 * (capas - 1), umbral=0.25)
                 avisar(min(0.85, 0.1 + 0.7 * len(mundo.dentro()) / max(estimado if not extrapolado else OBJETIVO_MUESTRA, 1)),
                        f"Volcando piezas… {len(mundo.cuerpos)} en la caja")
             # 2) vibrar y asentar
             avisar(0.86, "Vibrando el embalaje…")
-            mundo.avanzar(2.0, perfil_asentamiento())
-            mundo.asentar(1.5)
+            apurado = time.monotonic() - t_ini > presupuesto
+            mundo.avanzar(1.0 if apurado else 2.0, perfil_asentamiento())
+            mundo.asentar(0.8 if apurado else 1.5)
             adentro = len(mundo.dentro())
             # se corta cuando un nuevo ciclo casi no suma piezas (< 2%)
-            if adentro <= anterior * 1.02 or len(mundo.cuerpos) >= CUERPOS_MAX or time.monotonic() - t_ini > tiempo_max_s * 0.8:
+            if adentro <= anterior * 1.02 or len(mundo.cuerpos) >= CUERPOS_MAX or time.monotonic() - t_ini > presupuesto:
                 break
             anterior = adentro
         dentro = mundo.dentro()
@@ -341,13 +400,19 @@ def granel(pieza: Pieza, emb: Embalaje, friccion_caja: float = 0.45, avisar=None
             colocaciones.append({"centro_mm": [round(float(v), 3) for v in c], "rotacion": np.round(R, 5).tolist()})
         colocaciones.sort(key=lambda d: d["centro_mm"][2])
         vol_muestra = dims[0] * dims[1] * dims[2]
+        # ¿se llegó a llenar? (tope de cuerpos o de tiempo antes de rebalsar) → se extrapola en altura
+        lecho = _lecho_incompleto(mundo, dentro, float(ext.max()), float(ext.min()))
+        n_lleno = lecho["piezas_caja_llena"] if lecho else n
         total = _extrapolar(colocaciones, dims, (L, W, H), float(ext.max())) if extrapolado else n
+        if lecho and n:
+            total = int(round(total * n_lleno / n))
         avisar(0.97, "Preparando el resultado…")
         return {
             "piezas_que_entran": total,
             "extrapolado": extrapolado,
             "muestra": {"interior_mm": [round(d, 1) for d in dims], "piezas": n, "volcadas": len(mundo.cuerpos)} if extrapolado else None,
             "ciclos": ciclos,
+            "llenado_parcial": lecho,
             "rebalso": len(mundo.cuerpos) > n,
             "tope_de_cuerpos": len(mundo.cuerpos) >= CUERPOS_MAX,
             "fraccion_volumen": round(n * pieza.volumen_mm3 / vol_muestra, 4),
@@ -359,6 +424,23 @@ def granel(pieza: Pieza, emb: Embalaje, friccion_caja: float = 0.45, avisar=None
         }
     finally:
         mundo.cerrar()
+
+
+def _lecho_incompleto(mundo, dentro, dmax, dmin):
+    """
+    Si el volcado terminó (por tiempo o cantidad de cuerpos) sin llegar arriba, estima cuántas entrarían
+    con la caja llena usando la densidad del lecho por altura. Devuelve None si la caja quedó llena.
+    """
+    if not dentro:
+        return None
+    topes = np.array([mundo.tope_mm(b) for b in dentro])
+    superficie = float(np.percentile(topes, 90))       # la superficie es irregular: se toma el 90% más bajo
+    if superficie >= mundo.H - dmax or superficie < 2 * dmin:
+        return None
+    # piezas por mm de altura del lecho entero: el fondo (más ordenado) y la superficie irregular medida en
+    # su percentil 90 (más alta que la media) se compensan; la última capa contra la tapa queda medio vacía
+    estimado = int(round(len(dentro) * (mundo.H - 0.5 * dmin) / superficie))
+    return {"altura_lecho_mm": round(superficie, 1), "piezas": len(dentro), "piezas_caja_llena": max(estimado, len(dentro))}
 
 
 def _extrapolar(colocaciones, dims, destino, dmax) -> int:

@@ -73,3 +73,16 @@ def test_extrapolacion_con_densidad_uniforme_es_proporcional():
     C = [{"centro_mm": [x, y, z]} for x in xs for y in np.arange(5, 150, paso) for z in np.arange(5, 120, paso)]
     n = _extrapolar(C, (200, 150, 120), (400, 300, 240), dmax=10)
     assert abs(n - len(C) * 8) / (len(C) * 8) < 0.03
+
+
+def test_llenado_parcial_se_extrapola_en_altura(monkeypatch):
+    from packsim import fisica
+    from packsim.catalogo import construir
+    # si el volcado se corta antes de llenar (tope de cuerpos o de tiempo), se estima con la densidad del lecho
+    p = construir("buje", {"diametro": 20, "interior": 10.5, "largo": 25})
+    monkeypatch.setattr(fisica, "CUERPOS_MAX", 40)
+    r = fisica.granel(p, Embalaje((100, 80, 200)))
+    lp = r["llenado_parcial"]
+    assert lp and lp["piezas"] <= 40 and lp["altura_lecho_mm"] < 200
+    assert r["piezas_que_entran"] == lp["piezas_caja_llena"] > lp["piezas"]
+    assert r["extrapolado"] is False and r["muestra"] is None
